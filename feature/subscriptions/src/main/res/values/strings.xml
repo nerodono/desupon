@@ -259,7 +259,7 @@
     <string name="subs_form_unsupported">Ядро не запустит такой конфиг: %1$s</string>
 
     <!-- Sets -->
-    <string name="subs_sets_explain">Набор — какие подписки участвуют в автовыборе</string>
+    <string name="subs_sets_explain">Набор — какие подписки и конфиги участвуют в автовыборе</string>
     <string name="subs_sets_all">Все подписки</string>
     <string name="subs_sets_all_hint">все подписки, включая новые</string>
     <string name="subs_sets_active">активен</string>
@@ -270,8 +270,8 @@
     <string name="subs_sets_name">Название</string>
     <string name="subs_sets_name_blank">Введите название набора</string>
     <string name="subs_sets_name_taken">Набор с таким названием уже есть</string>
-    <string name="subs_sets_members">Подписки в наборе</string>
-    <string name="subs_sets_no_subscriptions">Подписок пока нет — добавьте их на вкладке «Подписки»</string>
+    <string name="subs_sets_members">Подписки и конфиги в наборе</string>
+    <string name="subs_sets_no_subscriptions">Подписок и конфигов пока нет — добавьте их на вкладках «Подписки» и «Конфиги»</string>
     <string name="subs_sets_delete_title">Удалить набор?</string>
     <string name="subs_sets_delete_text">Набор «%1$s» будет удалён, подписки останутся. Если он активен, автовыбор перейдёт на все подписки.</string>
     <string name="subs_sets_deleted">Набор удалён</string>

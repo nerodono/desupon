@@ -40,22 +40,55 @@ class ConfigDraftTest {
 
     @Test
     fun `validation and text edits clear errors`() {
-        val blank = ConfigDraft.new().validate()
+        val formless = ConfigDraft.new()
+        assertEquals(ConfigMode.FORM, formless.mode)
+        assertEquals(UiText.Res(R.string.subs_config_form_pick_protocol), formless.validate().error)
+        val blank = ConfigDraft.new().toText().validate()
         assertEquals(UiText.Res(R.string.subs_config_error_empty), blank.error)
         assertNull(blank.text(link).error)
-        val formless = ConfigDraft.new().copy(mode = ConfigMode.FORM)
-        assertEquals(UiText.Res(R.string.subs_config_form_pick_protocol), formless.validate().error)
-        val ok = ConfigDraft.new().text(link)
+        val ok = ConfigDraft.new().toText().text(link)
         assertEquals(ok, ok.validate())
     }
 
     @Test
     fun `text the form cannot show stays in text mode with a note`() {
-        val d = ConfigDraft.new().text("wireguard://cHJpdmF0ZQ@w.example.com:51820")
+        val d = ConfigDraft.new().toText().text("wireguard://cHJpdmF0ZQ@w.example.com:51820")
         val tried = d.toForm()
         assertEquals(ConfigMode.TEXT, tried.mode)
         assertEquals(UiText.Res(R.string.subs_config_form_unavailable), tried.formNote)
-        assertEquals(UiText.Res(R.string.subs_config_form_pick_protocol), ConfigDraft.new().toForm().formNote)
+        assertEquals(UiText.Res(R.string.subs_config_form_pick_protocol), ConfigDraft.new().toText().toForm().formNote)
+    }
+
+    @Test
+    fun `text the form can show switches to it and back without losing anything`() {
+        val d = ConfigDraft.new().toText().text(link).toForm()
+        assertEquals(ConfigMode.FORM, d.mode)
+        assertEquals("A", d.form!!.name)
+        assertEquals("a.example.com", d.form[Field.SERVER])
+        val back = d.toText()
+        assertEquals(ConfigMode.TEXT, back.mode)
+        assertTrue(back.text.trimStart().startsWith("{"))
+    }
+
+    @Test
+    fun `switching protocol keeps the name and server`() {
+        val d = ConfigDraft.new().newForm(FormProtocol.TROJAN).form { it.name("Мой").set(Field.SERVER, "s.example.com").set(Field.PASSWORD, "pw") }
+        val vless = d.newForm(FormProtocol.VLESS).form!!
+        assertEquals(FormProtocol.VLESS, vless.protocol)
+        assertEquals("Мой", vless.name)
+        assertEquals("s.example.com", vless[Field.SERVER])
+        assertEquals("", vless[Field.PASSWORD])
+    }
+
+    @Test
+    fun `a form that does not read back as a runnable node is refused`() {
+        val form = ConfigForm.blank(FormProtocol.TROJAN).set(Field.SERVER, "t.example.com").set(Field.PASSWORD, "pw")
+        val draft = ConfigDraft.new().copy(form = form)
+        assertNull(draft.validate().error)
+        val missing = ConfigDraft.new().copy(form = ConfigForm.blank(FormProtocol.TROJAN))
+        val checked = missing.validate()
+        assertEquals(UiText.Res(R.string.subs_form_fix), checked.error)
+        assertTrue(Field.SERVER in checked.form!!.errors)
     }
 
     @Test

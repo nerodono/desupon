@@ -177,7 +177,8 @@ internal fun ConfigEditorScreen(
                     }
                 }
             }
-            preview?.let { p -> item(key = "preview") { PreviewCard(p) } }
+            // A half-filled form always reads as broken; its field errors already say what is missing.
+            preview?.takeIf { d.mode == ConfigMode.TEXT || it.error == null }?.let { p -> item(key = "preview") { PreviewCard(p) } }
             if (id != null) {
                 item(key = "actions") {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {

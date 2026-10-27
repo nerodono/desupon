@@ -68,8 +68,15 @@ internal data class ConfigDraft(
         return copy(mode = ConfigMode.FORM, form = form, error = null, formNote = null)
     }
 
-    /** A fresh form for [protocol], replacing whatever was entered. */
-    fun newForm(protocol: FormProtocol) = copy(mode = ConfigMode.FORM, form = ConfigForm.blank(protocol), error = null, formNote = null)
+    /** A fresh form for [protocol]; the name and server carry over from the form being replaced. */
+    fun newForm(protocol: FormProtocol): ConfigDraft {
+        var next = ConfigForm.blank(protocol)
+        form?.let { old ->
+            next = next.name(old.name)
+            if (old[Field.SERVER].isNotEmpty()) next = next.set(Field.SERVER, old[Field.SERVER])
+        }
+        return copy(mode = ConfigMode.FORM, form = next, error = null, formNote = null)
+    }
 
     /**
      * Checks what the repository cannot report; [error] is set when the draft cannot be submitted.
@@ -91,9 +98,10 @@ internal data class ConfigDraft(
     }
 
     companion object {
+        /** Starts on the protocol picker; the text mode is one switch away. */
         fun new(): ConfigDraft = ConfigDraft(
             id = null,
-            mode = ConfigMode.TEXT,
+            mode = ConfigMode.FORM,
             text = "",
             initialText = "",
             form = null,
