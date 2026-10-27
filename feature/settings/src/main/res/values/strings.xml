@@ -132,11 +132,39 @@
     <string name="config_copy">Скопировать</string>
     <string name="config_copied">Скопировано</string>
 
+    <string name="settings_section_logs">Логи</string>
+    <string name="settings_logs_core">Логи sing-box</string>
+    <string name="settings_logs_core_summary">Журнал ядра, включая Hysteria, Juicity и другие протоколы. Хранится только в памяти до закрытия приложения</string>
+    <string name="settings_logs_level">Что записывать</string>
+    <string name="settings_logs_level_errors">Ошибки</string>
+    <string name="settings_logs_level_warnings">Предупреждения</string>
+    <string name="settings_logs_level_info">Инфо</string>
+    <string name="settings_logs_level_debug">Отладка</string>
+    <string name="settings_logs_level_hint">Ошибки, предупреждения и запуск ядра</string>
+    <string name="settings_logs_level_hint_private">Записываются и адреса сайтов, которые открывают приложения. Включайте на время поиска проблемы</string>
+    <string name="logs_title">Логи sing-box</string>
+    <string name="logs_search">Поиск</string>
+    <string name="logs_search_clear_cd">Очистить поиск</string>
+    <string name="logs_show_all">Все</string>
+    <string name="logs_show_warnings">Предупреждения</string>
+    <string name="logs_show_errors">Ошибки</string>
+    <string name="logs_share">Поделиться</string>
+    <string name="logs_share_subject">Desupon: логи sing-box</string>
+    <string name="logs_copy">Скопировать</string>
+    <string name="logs_clear">Очистить</string>
+    <string name="logs_empty">Пока пусто</string>
+    <string name="logs_empty_hint">Строки появляются, пока VPN включён. Сейчас записываются: %1$s</string>
+    <string name="logs_nothing_found">Ничего не найдено</string>
+    <string name="logs_session_started">VPN включён</string>
+    <string name="logs_session_stopped">VPN выключен</string>
+    <string name="logs_truncated">… начало обрезано, всего строк: %1$d</string>
+    <string name="logs_to_end_cd">К последним строкам</string>
+
     <string name="settings_section_data">Данные</string>
     <string name="settings_reset">Сбросить настройки</string>
     <string name="settings_reset_summary">Вернуть заводские значения. Подписки не затрагиваются</string>
     <string name="settings_reset_confirm_title">Сбросить настройки?</string>
-    <string name="settings_reset_confirm_text">Тема, соединение, DNS, настройки баз geoip/geosite, разделение трафика и правила вернутся к значениям по умолчанию. Подписки и скачанные базы останутся.</string>
+    <string name="settings_reset_confirm_text">Тема, соединение, DNS, настройки баз geoip/geosite, подробность логов, разделение трафика и правила вернутся к значениям по умолчанию. Подписки и скачанные базы останутся.</string>
 
     <string name="action_save">Сохранить</string>
     <string name="action_add">Добавить</string>

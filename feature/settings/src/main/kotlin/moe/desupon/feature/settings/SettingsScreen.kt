@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PlayArrow
@@ -54,11 +55,13 @@ import moe.desupon.data.geo.GeoDataSettings
 import moe.desupon.data.geo.GeoDataUpdater
 import moe.desupon.data.geo.GeoKind
 import moe.desupon.data.repo.UrlMask
+import moe.desupon.data.settings.LogVerbosity
 import moe.desupon.data.settings.ThemePreference
 import moe.desupon.feature.settings.logic.Ago
 import moe.desupon.feature.settings.logic.DnsAddress
 import moe.desupon.feature.settings.logic.GeoStatusLine
 import moe.desupon.feature.settings.logic.GeoUrl
+import moe.desupon.feature.settings.logs.verbosityLabel
 import moe.desupon.feature.settings.ui.ChoiceRow
 import moe.desupon.feature.settings.ui.ChevronRow
 import moe.desupon.feature.settings.ui.SectionHeader
@@ -79,12 +82,14 @@ private enum class SettingsDialog { DNS, USER_AGENT, GEOIP_URL, GEOSITE_URL, RES
 fun SettingsScreen(
     onOpenSplitTunnel: () -> Unit,
     onOpenConfig: () -> Unit,
+    onOpenLogs: () -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(),
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val geo by viewModel.geo.collectAsStateWithLifecycle()
+    val verbosity by viewModel.logVerbosity.collectAsStateWithLifecycle()
     var dialog by rememberSaveable { mutableStateOf<SettingsDialog?>(null) }
 
     LazyColumn(
@@ -126,6 +131,7 @@ fun SettingsScreen(
                 )
             }
         }
+        item { LogsSection(verbosity, viewModel::setLogVerbosity, onOpenLogs) }
         item {
             Section(R.string.settings_section_data) {
                 SettingsRow(
@@ -432,6 +438,28 @@ private fun GeoSection(state: GeoUiState, viewModel: SettingsViewModel, onEditUr
             onClick = viewModel::updateGeoNow,
         ) {
             if (state.running) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+        }
+    }
+}
+
+@Composable
+private fun LogsSection(verbosity: LogVerbosity, onVerbosity: (LogVerbosity) -> Unit, onOpenLogs: () -> Unit) {
+    Section(R.string.settings_section_logs) {
+        ChevronRow(
+            title = stringResource(R.string.settings_logs_core),
+            subtitle = stringResource(R.string.settings_logs_core_summary),
+            icon = SettingsGlyphs.Logs,
+            onClick = onOpenLogs,
+        )
+        val keepsSites = verbosity >= LogVerbosity.INFO
+        ChoiceRow(
+            title = stringResource(R.string.settings_logs_level),
+            icon = Icons.AutoMirrored.Filled.List,
+            subtitle = stringResource(if (keepsSites) R.string.settings_logs_level_hint_private else R.string.settings_logs_level_hint),
+        ) {
+            LogVerbosity.entries.forEach { v ->
+                FilterChip(selected = v == verbosity, onClick = { onVerbosity(v) }, label = { Text(verbosityLabel(v)) })
+            }
         }
     }
 }

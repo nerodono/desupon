@@ -7,6 +7,7 @@ import moe.desupon.feature.home.homeModule
 import moe.desupon.feature.settings.settingsModule
 import moe.desupon.feature.subscriptions.subscriptionsModule
 import moe.desupon.platform.di.platformModule
+import moe.desupon.platform.log.CoreLogBuffer
 import moe.desupon.vpn.di.serviceModule
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
@@ -18,6 +19,8 @@ class DesuponApp : Application() {
             androidContext(this@DesuponApp)
             modules(dataModule, platformModule, serviceModule, homeModule, subscriptionsModule, settingsModule, appModule)
         }.koin
+        // Starts recording now, so the viewer has the whole run.
+        koin.get<CoreLogBuffer>()
         val lifecycle = ProcessLifecycleOwner.get().lifecycle
         lifecycle.addObserver(koin.get<SubscriptionAutoUpdate>())
         lifecycle.addObserver(koin.get<GeoDataAutoUpdate>().also { it.start() })

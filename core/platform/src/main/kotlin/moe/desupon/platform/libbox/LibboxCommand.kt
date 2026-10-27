@@ -43,6 +43,8 @@ import moe.desupon.platform.iface.toList
 import moe.desupon.platform.log.CoreException
 import moe.desupon.platform.log.CoreLogEntry
 import moe.desupon.platform.log.CoreLogLevel
+import moe.desupon.platform.log.CoreLogText
+import moe.desupon.platform.log.LogReplay
 import moe.desupon.platform.log.Redactor
 
 /** Native calls of [LibboxCommand]; a seam so its sequencing runs without the core library. */
@@ -235,6 +237,8 @@ class LibboxCommand internal constructor(
     private fun active() = synchronized(this) { client != null }
 
     private inner class Handler : CommandClientHandler {
+        private val replay = LogReplay(LibboxSetup.LOG_MAX_LINES)
+
         override fun connected() {}
 
         override fun disconnected(message: String?) {
@@ -247,14 +251,18 @@ class LibboxCommand internal constructor(
             if (active()) _defaultLogLevel.value = CoreLogLevel.fromCore(level)
         }
 
-        override fun clearLogs() {}
+        override fun clearLogs() {
+            synchronized(replay) { replay.reset() }
+        }
 
         override fun writeLogs(messageList: LogIterator?) {
             if (messageList == null || !active()) return
+            val batch = ArrayList<CoreLogEntry>()
             while (messageList.hasNext()) {
                 val entry = messageList.next() ?: continue
-                _logs.tryEmit(CoreLogEntry(CoreLogLevel.fromCore(entry.level), Redactor.mask(entry.message)))
+                batch += CoreLogEntry(CoreLogLevel.fromCore(entry.level), CoreLogText.clean(entry.message))
             }
+            synchronized(replay) { replay.accept(batch) }.forEach { _logs.tryEmit(it) }
         }
 
         override fun writeStatus(message: StatusMessage?) {
@@ -312,7 +320,8 @@ class LibboxCommand internal constructor(
 
     private companion object {
         const val DIAL_WAIT_MS = 3_000L
-        const val LOG_BUFFER = 512
+        // Room for a whole replayed core ring.
+        const val LOG_BUFFER = 4_096
         const val RETRY_BASE_MS = 500L
         const val RETRY_MAX_MS = 5_000L
     }

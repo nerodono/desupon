@@ -172,6 +172,7 @@ class SettingsRepositoryTest {
         r.setGeoUrl(GeoKind.GEOIP, "https://mirror.example/geoip.dat")
         r.setGeoInterval(null)
         r.setGeoUnmeteredOnly(false)
+        r.setLogVerbosity(LogVerbosity.DEBUG)
         val status = GeoFileStatus(
             url = "https://mirror.example/geoip.dat",
             etag = "\"e1\"",
@@ -195,7 +196,18 @@ class SettingsRepositoryTest {
         assertTrue(r.notificationPromptShown.first())
         assertTrue(r.batteryPromptShown.first())
         assertEquals(GeoDataSettings(), r.geoData.first())
+        assertEquals(LogVerbosity.WARNINGS, r.logVerbosity.first())
         assertEquals(status, r.geoStatus.first().getValue(GeoKind.GEOIP), "download status survives a reset")
+    }
+
+    @Test
+    fun logVerbosityDefaultsToWarningsAndIsStored() = runTest {
+        val r = repo()
+        assertEquals(LogVerbosity.WARNINGS, r.logVerbosity.first())
+        r.setLogVerbosity(LogVerbosity.INFO)
+        assertEquals(LogVerbosity.INFO, r.logVerbosity.first())
+        val reopened = SettingsRepository(SettingsRepository.createDataStore(File(tmp.root, "copy.preferences_pb").also { file.copyTo(it) }))
+        assertEquals(LogVerbosity.INFO, reopened.logVerbosity.first())
     }
 
     @Test

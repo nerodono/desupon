@@ -33,6 +33,7 @@ import moe.desupon.feature.home.SimpleHomeScreen
 import moe.desupon.feature.settings.ConfigScreen
 import moe.desupon.feature.settings.SettingsScreen
 import moe.desupon.feature.settings.SplitTunnelScreen
+import moe.desupon.feature.settings.logs.CoreLogScreen
 import moe.desupon.feature.subscriptions.SimpleImportPrompt
 import moe.desupon.feature.subscriptions.SubscriptionImportRequests
 import moe.desupon.feature.subscriptions.SubscriptionsScreen
@@ -47,6 +48,7 @@ enum class TopDestination(val route: String, @StringRes val label: Int) {
 
 private const val ROUTE_SPLIT = "settings/split"
 private const val ROUTE_CONFIG = "settings/config"
+private const val ROUTE_LOGS = "settings/logs"
 
 private val TopDestination.icon: ImageVector
     get() = when (this) {
@@ -114,12 +116,14 @@ fun DesuponNav(requests: Flow<TopDestination>) {
                     SettingsScreen(
                         onOpenSplitTunnel = { nav.navigate(ROUTE_SPLIT) },
                         onOpenConfig = { nav.navigate(ROUTE_CONFIG) },
+                        onOpenLogs = { nav.navigate(ROUTE_LOGS) },
                         contentPadding = padding,
                     )
                 }
             }
             composable(ROUTE_SPLIT) { SplitTunnelScreen(onBack = { nav.popBackStack() }) }
             composable(ROUTE_CONFIG) { ConfigScreen(onBack = { nav.popBackStack() }) }
+            composable(ROUTE_LOGS) { CoreLogScreen(onBack = { nav.popBackStack() }) }
         }
     }
 }

@@ -5,6 +5,7 @@ import moe.desupon.brain.port.HostProbe
 import moe.desupon.brain.port.LibboxControl
 import moe.desupon.brain.port.NetModeDetector
 import moe.desupon.brain.port.Prober
+import moe.desupon.platform.log.CoreLogBuffer
 import moe.desupon.platform.net.HostListNetModeDetector
 import moe.desupon.platform.net.SocketHostProbe
 import org.junit.After
@@ -31,5 +32,6 @@ class PlatformModuleTest {
         assertIs<HostListNetModeDetector>(koin.get<NetModeDetector>())
         koin.get<LibboxControl>()
         koin.get<Prober>()
+        koin.get<CoreLogBuffer>()
     }
 }
