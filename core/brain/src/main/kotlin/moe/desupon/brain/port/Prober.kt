@@ -22,7 +22,7 @@ data class ProbeRequest(
     val dnsCsv: String,
     /** Network to bind probe sockets to; null means the current default. */
     val network: NetworkHandle?,
-    /** The underlying network has no IPv6, so AAAA lookups are skipped. */
+    /** The underlying network has no IPv6 or the user turned it off, so AAAA lookups are skipped. */
     val ipv4Only: Boolean = false,
     /** Per-tag timeouts overriding [timeoutMs]. */
     val timeouts: Map<String, Int> = emptyMap(),

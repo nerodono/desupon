@@ -3,6 +3,7 @@ package moe.desupon.platform.iface
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class TunSpecTest {
     private val v4 = Prefix("10.13.0.1", 30)
@@ -64,6 +65,24 @@ class TunSpecTest {
         val spec = TunSpec.of(request(range4 = ranges, exclude4 = listOf(Prefix("192.168.0.0", 16))), sdk = 30)
         assertEquals(ranges, spec.routes)
         assertEquals(emptyList(), spec.excludeRoutes)
+    }
+
+    @Test
+    fun withoutAnIpv6AddressNothingOfIpv6ReachesTheBuilder() {
+        val request = request(exclude4 = listOf(Prefix("192.168.0.0", 16)), range4 = listOf(Prefix("0.0.0.0", 0))).copy(
+            inet6Address = emptyList(),
+            dnsServers = listOf("10.13.0.2", "fdfe:dcba:9876::2"),
+            inet6RouteAddress = listOf(Prefix("2001:db8::", 32)),
+            inet6RouteExcludeAddress = listOf(Prefix("fc00::", 7)),
+            inet6RouteRange = listOf(Prefix("::", 0)),
+        )
+        for (sdk in listOf(30, 34)) {
+            val spec = TunSpec.of(request, sdk)
+            assertEquals(listOf(v4), spec.addresses)
+            assertEquals(listOf("10.13.0.2"), spec.dnsServers)
+            assertEquals(listOf(Prefix("0.0.0.0", 0)), spec.routes)
+            assertTrue((spec.addresses + spec.routes + spec.excludeRoutes).none { it.isIpv6 }, "sdk $sdk")
+        }
     }
 
     @Test

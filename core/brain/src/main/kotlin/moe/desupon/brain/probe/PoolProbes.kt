@@ -29,6 +29,7 @@ import moe.desupon.brain.port.SocketProtector
 import moe.desupon.config.ConfigException
 import moe.desupon.config.ConfigGenerator
 import moe.desupon.model.Secret
+import moe.desupon.model.network.DnsSettings
 import moe.desupon.model.network.NetworkMode
 import moe.desupon.model.network.Transport
 import moe.desupon.model.node.Node
@@ -225,7 +226,7 @@ class OffTunnelPoolProbe(
                     } catch (_: ConfigException) {
                         return@runSweep emptyMap()
                     }
-                    val request = poolRequest(config, probe.json, net, batch.associate { it.id.tag to config.probeTimeoutMs(net.key.transport, known[it.id], now) })
+                    val request = poolRequest(config, probe.json, net, dns, batch.associate { it.id.tag to config.probeTimeoutMs(net.key.transport, known[it.id], now) })
                     val raw = attempt(emptyMap()) { prober.probePool(request, protector) }
                     raw.entries.mapNotNull { (tag, r) -> byTag[tag]?.let { it.id to r } }.toMap()
                 }
@@ -255,7 +256,13 @@ internal fun sweepParallel(config: BrainConfig, transport: Transport): Int =
     (config.poolConcurrency(transport) / config.sweepBatch(transport)).coerceAtLeast(1)
 
 /** One pool probe call; a verified node's timeout goes in [timeouts] only when it differs from the default. */
-internal fun poolRequest(config: BrainConfig, nodesJson: Secret, net: BrainEvent.NetworkChanged, timeouts: Map<String, Int>): ProbeRequest {
+internal fun poolRequest(
+    config: BrainConfig,
+    nodesJson: Secret,
+    net: BrainEvent.NetworkChanged,
+    dns: DnsSettings,
+    timeouts: Map<String, Int>,
+): ProbeRequest {
     val default = config.unknownTimeoutMs(net.key.transport)
     return ProbeRequest(
         nodesJson = nodesJson,
@@ -263,7 +270,7 @@ internal fun poolRequest(config: BrainConfig, nodesJson: Secret, net: BrainEvent
         concurrency = config.poolConcurrency(net.key.transport),
         dnsCsv = net.dnsServers.joinToString(","),
         network = net.network,
-        ipv4Only = !net.ipv6,
+        ipv4Only = !net.ipv6 || dns.ipv4Only,
         timeouts = timeouts.filterValues { it != default },
     )
 }

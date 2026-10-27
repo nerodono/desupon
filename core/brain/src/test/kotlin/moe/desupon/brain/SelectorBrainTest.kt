@@ -12,6 +12,9 @@ import moe.desupon.brain.port.BrainEvent
 import moe.desupon.brain.port.ConnState
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
+import moe.desupon.config.ConfigGenerator
+import moe.desupon.model.network.DnsSettings
+import moe.desupon.model.network.DnsStrategy
 import moe.desupon.model.network.NetworkMemory
 import moe.desupon.model.network.NetworkMode
 import moe.desupon.model.node.Node
@@ -491,6 +494,37 @@ class SelectorBrainTest {
         runCurrent()
         assertEquals(3, h.libbox.reloads.size)
         assertEquals(apps, h.libbox.reloads.last().apps)
+
+        h.assertOn(d1)
+        assertEquals(startedAt, h.connected().connectedAtMs)
+        h.assertReloadsSelected()
+    }
+
+    @Test
+    fun `ipv4 only keeps IPv6 out of the tun from the placeholder on, and toggling it reloads the tun`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val h = Harness(this, listOf(d1))
+        h.alive(d1)
+        val v6 = ConfigGenerator.TUN_ADDRESS.single { ':' in it }
+        fun ipv4Only(on: Boolean) {
+            h.settings.settings.value = ConnectionSettings(dns = DnsSettings(strategy = if (on) DnsStrategy.IPV4_ONLY else DnsStrategy.PREFER_IPV4))
+        }
+        ipv4Only(true)
+
+        h.connectOn(WIFI)
+        assertTrue(v6 !in h.libbox.calls.filterIsInstance<FakeLibbox.Call.Placeholder>().single().json)
+        assertTrue(v6 !in h.libbox.reloads.single().json)
+        assertTrue(h.prober.poolRequests.all { it.ipv4Only }, "the network has IPv6, the setting turns it off")
+        val startedAt = h.connected().connectedAtMs
+
+        ipv4Only(false)
+        runCurrent()
+        assertEquals(2, h.libbox.reloads.size)
+        assertTrue(v6 in h.libbox.reloads.last().json)
+        ipv4Only(true)
+        runCurrent()
+        assertEquals(3, h.libbox.reloads.size)
+        assertTrue(v6 !in h.libbox.reloads.last().json)
 
         h.assertOn(d1)
         assertEquals(startedAt, h.connected().connectedAtMs)

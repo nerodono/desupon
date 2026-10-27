@@ -52,7 +52,7 @@ class ConfigGenerator {
                 final = DNS_REMOTE,
                 strategy = strategyName(request.dns.strategy),
             ),
-            inbounds = listOf(tun(request.mtu, request.lanBypass)),
+            inbounds = listOf(tun(request.mtu, request.lanBypass, request.dns.ipv4Only)),
             outbounds = listOf(selector) + built.outbounds + encode(DirectDto.serializer(), DirectDto(tag = TAG_DIRECT)),
             endpoints = built.endpoints.ifEmpty { null },
             route = RouteDto(
@@ -70,12 +70,12 @@ class ConfigGenerator {
      * TUN that rejects every packet, DNS included: brings the tunnel up before anything is probed, so no app
      * traffic leaves in the clear meanwhile. A MAIN config without nodes, so there is no selector to pick.
      */
-    fun placeholderConfig(lanBypass: Boolean = false, mtu: Int = DEFAULT_MTU): Secret {
+    fun placeholderConfig(lanBypass: Boolean = false, mtu: Int = DEFAULT_MTU, ipv4Only: Boolean = false): Secret {
         if (mtu !in MIN_MTU..MAX_MTU) throw ConfigException("mtu must be within $MIN_MTU..$MAX_MTU")
         val config = ConfigDto(
             log = LogDto(MAIN_LOG_LEVEL),
             dns = DnsDto(servers = listOf(DnsServerDto(type = "local", tag = DNS_LOCAL))),
-            inbounds = listOf(tun(mtu, lanBypass)),
+            inbounds = listOf(tun(mtu, lanBypass, ipv4Only)),
             outbounds = listOf(encode(BlockDto.serializer(), BlockDto(tag = TAG_BLOCK))),
             route = RouteDto(final = TAG_BLOCK, defaultDomainResolver = resolver(DnsStrategy.PREFER_IPV4)),
             experimental = ExperimentalDto(CacheFileDto()),
@@ -88,12 +88,16 @@ class ConfigGenerator {
 
     fun validate(json: String, kind: ConfigKind? = null): List<String> = ConfigValidator.validate(json, kind)
 
-    private fun tun(mtu: Int, lanBypass: Boolean) = TunInboundDto(
-        tag = TAG_TUN,
-        address = TUN_ADDRESS,
-        mtu = mtu,
-        routeExcludeAddress = LAN_RANGES.takeIf { lanBypass },
-    )
+    /** Android blocks IPv6 for tunnelled apps when the TUN has no IPv6 address or route, which is how [ipv4Only] keeps it out. */
+    private fun tun(mtu: Int, lanBypass: Boolean, ipv4Only: Boolean): TunInboundDto {
+        fun List<String>.families() = if (ipv4Only) filterNot { ':' in it } else this
+        return TunInboundDto(
+            tag = TAG_TUN,
+            address = TUN_ADDRESS.families(),
+            mtu = mtu,
+            routeExcludeAddress = LAN_RANGES.takeIf { lanBypass }?.families(),
+        )
+    }
 
     private class BuiltNodes(
         val outbounds: List<JsonObject>,

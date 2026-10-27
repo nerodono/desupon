@@ -207,6 +207,15 @@ class MainConfigTest {
     }
 
     @Test
+    fun `ipv4 only leaves IPv6 out of the tun, placeholder included`() {
+        val ipv4 = request.copy(dns = DnsSettings(strategy = DnsStrategy.IPV4_ONLY), lanBypass = true)
+        val tun = build(ipv4).second.objects("inbounds").single()
+        assertEquals(listOf("198.19.250.1/30"), tun["address"]!!.strings())
+        assertEquals(listOf("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"), tun["route_exclude_address"]!!.strings())
+        assertEquals(tun, Fixtures.parse(gen.placeholderConfig(lanBypass = true, ipv4Only = true).raw()).objects("inbounds").single())
+    }
+
+    @Test
     fun `lan bypass excludes private ranges from the tun`() {
         val (_, root) = build(request.copy(lanBypass = true))
         assertEquals(ConfigGenerator.LAN_RANGES, root.objects("inbounds").single()["route_exclude_address"]!!.strings())

@@ -36,25 +36,28 @@ data class TunSpec(
     val disallowedApps: List<String>,
 ) {
     companion object {
-        /** Routes, DNS and per-app lists only apply with auto_route, as the core expects. */
+        /**
+         * Routes, DNS and per-app lists only apply with auto_route, as the core expects.
+         * A family without an address gets no route or DNS server either, so Android blocks that family for tunnelled apps.
+         */
         fun of(request: TunRequest, sdk: Int = Build.VERSION.SDK_INT): TunSpec {
             require(request.mtu > 0) { "tun: mtu must be set explicitly" }
             val addresses = request.inet4Address + request.inet6Address
             if (!request.autoRoute) {
                 return TunSpec(request.mtu, addresses, emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
             }
-            val dns = if (request.dnsDisabled) emptyList() else request.dnsServers
+            val v4 = request.inet4Address.isNotEmpty()
+            val v6 = request.inet6Address.isNotEmpty()
+            fun List<Prefix>.ifHas(family: Boolean) = if (family) this else emptyList()
+            val dns = if (request.dnsDisabled) emptyList() else request.dnsServers.filter { if (':' in it) v6 else v4 }
             val routes: List<Prefix>
             val excludes: List<Prefix>
             if (sdk >= Build.VERSION_CODES.TIRAMISU) {
-                routes = request.inet4RouteAddress.ifEmpty {
-                    if (request.inet4Address.isNotEmpty()) listOf(Prefix("0.0.0.0", 0)) else emptyList()
-                } + request.inet6RouteAddress.ifEmpty {
-                    if (request.inet6Address.isNotEmpty()) listOf(Prefix("::", 0)) else emptyList()
-                }
-                excludes = request.inet4RouteExcludeAddress + request.inet6RouteExcludeAddress
+                routes = request.inet4RouteAddress.ifEmpty { listOf(Prefix("0.0.0.0", 0)) }.ifHas(v4) +
+                    request.inet6RouteAddress.ifEmpty { listOf(Prefix("::", 0)) }.ifHas(v6)
+                excludes = request.inet4RouteExcludeAddress.ifHas(v4) + request.inet6RouteExcludeAddress.ifHas(v6)
             } else {
-                routes = request.inet4RouteRange + request.inet6RouteRange
+                routes = request.inet4RouteRange.ifHas(v4) + request.inet6RouteRange.ifHas(v6)
                 excludes = emptyList()
             }
             // The builder rejects mixing allowed and disallowed apps; the include list wins.

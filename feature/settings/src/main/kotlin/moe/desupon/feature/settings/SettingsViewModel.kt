@@ -17,7 +17,6 @@ import moe.desupon.feature.settings.apps.InstalledAppsSource
 import moe.desupon.feature.settings.logic.AppRows
 import moe.desupon.feature.settings.logic.DnsAddress
 import moe.desupon.model.network.DnsSettings
-import moe.desupon.model.network.DnsStrategy
 import moe.desupon.model.routing.ConnectionSettings
 import moe.desupon.model.routing.SplitMode
 
@@ -30,7 +29,7 @@ data class SettingsUiState(
     /** Installed apps checked in the split picker, see [AppRows.checked]; null until the app list loads. */
     val splitApps: Int? = null,
 ) {
-    val ipv4Only: Boolean get() = connection.dns.strategy == DnsStrategy.IPV4_ONLY
+    val ipv4Only: Boolean get() = connection.dns.ipv4Only
     val splitMode: SplitMode get() = connection.apps.mode
 }
 
