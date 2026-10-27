@@ -46,6 +46,7 @@ import moe.desupon.brain.port.ConnState
 import moe.desupon.brain.port.LibboxControl
 import moe.desupon.brain.port.SettingsPort
 import moe.desupon.brain.port.SocketProtector
+import moe.desupon.brain.port.TunnelRecovery
 import moe.desupon.brain.probe.PoolProbes
 import moe.desupon.data.geo.GeoDataUpdater
 import moe.desupon.data.repo.ProbeStatRepository
@@ -212,7 +213,7 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
                         .distinctUntilChanged()
                         .collect(b::onEvent)
                 }
-                forwardRecovery(wakes, observer.unblocked, { runtime.log(CoreLogLevel.INFO, it) }, b::onWake, b::onNetworkUnblocked)
+                forwardRecovery(wakes, observer, { runtime.log(CoreLogLevel.INFO, it) }, b)
                 registerReceivers(b)
                 b.connect()
                 awaitCancellation()
@@ -432,24 +433,17 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
         internal fun addedPackage(intent: Intent): String? =
             intent.data?.schemeSpecificPart?.takeIf { !intent.getBooleanExtra(Intent.EXTRA_REPLACING, false) }
 
-        /** A long sleep resets only the sleep-fragile outbounds; an unblocked network, which any connection may have lost packets to, the whole core. */
-        internal fun CoroutineScope.forwardRecovery(
-            wakes: Flow<Long>,
-            unblocked: Flow<Unit>,
-            log: (String) -> Unit,
-            onWake: () -> Unit,
-            onUnblocked: () -> Unit,
-        ) {
+        internal fun CoroutineScope.forwardRecovery(wakes: Flow<Long>, observer: NetworkObserver, log: (String) -> Unit, target: TunnelRecovery) {
             launch {
                 wakes.collect { slept ->
-                    log("woke after ${slept / 1_000} s asleep, resetting QUIC sessions")
-                    onWake()
+                    log("woke after ${slept / 1_000} s asleep, resetting sessions the sleep may have killed")
+                    target.onWake(slept)
                 }
             }
             launch {
-                unblocked.collect {
+                observer.unblocked.collect {
                     log("network unblocked, resetting the network")
-                    onUnblocked()
+                    target.onNetworkUnblocked()
                 }
             }
         }

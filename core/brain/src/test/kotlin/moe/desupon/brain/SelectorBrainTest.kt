@@ -946,13 +946,100 @@ class SelectorBrainTest {
         for (node in listOf(t1, h1, s1, c1, w1)) assertTrue("\"tag\":\"${node.tag}\"" in config, "${node.displayName} not loaded")
         h.journal.entries.clear()
 
-        h.brain.onWake()
+        h.brain.onWake(25_000)
         runCurrent()
 
         assertEquals(0, h.libbox.resets, "a wake never resets the whole core")
         assertEquals(setOf(t1.tag, c1.tag), h.libbox.outboundResets.toSet())
         assertEquals("probeLive:${t1.tag}", h.journal.entries.last())
         h.assertOn(t1)
+    }
+
+    @Test
+    fun `wake resets nodes riding QUIC on the transport too, as the node or a hop`() = runTest {
+        val q1 = Nodes.vlessH3("q1")
+        val c1 = Nodes.ssViaVlessQuic("c1")
+        val p1 = Nodes.vlessH2("p1")
+        val h = Harness(this, listOf(q1, c1, p1))
+        h.alive(q1, c1, p1)
+        h.rtt(q1 to 10, c1 to 20, p1 to 30)
+        h.connectOn(WIFI)
+        advance(600_000)
+        val config = h.libbox.reloads.last().json
+        for (node in listOf(q1, c1, p1)) assertTrue("\"tag\":\"${node.tag}\"" in config, "${node.displayName} not loaded")
+
+        h.brain.onWake(25_000)
+        runCurrent()
+
+        assertEquals(0, h.libbox.resets)
+        assertEquals(setOf(q1.tag, c1.tag), h.libbox.outboundResets.toSet(), "a pooled TCP node rides out a short sleep")
+    }
+
+    @Test
+    fun `a long sleep also resets nodes pooling their flows on one TCP connection`() = runTest {
+        val t1 = Nodes.tuic("t1")
+        val p1 = Nodes.vlessH2("p1")
+        val s1 = Nodes.ss("s1")
+        val h = Harness(this, listOf(t1, p1, s1))
+        h.alive(t1, p1, s1)
+        h.rtt(t1 to 10, p1 to 20, s1 to 30)
+        h.connectOn(WIFI)
+        advance(600_000)
+
+        h.brain.onWake(BrainConfig().longSleepMs)
+        runCurrent()
+
+        assertEquals(0, h.libbox.resets)
+        assertEquals(setOf(t1.tag, p1.tag), h.libbox.outboundResets.toSet())
+    }
+
+    @Test
+    fun `a wake with no sleep-fragile node resets nothing but still opens the grace window and checks at once`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val d2 = Nodes.ss("d2")
+        val h = Harness(this, listOf(d1, d2))
+        h.alive(d1, d2)
+        h.rtt(d1 to 10, d2 to 20)
+        h.connectOn(WIFI)
+        advance(600_000)
+        val before = h.stats.map.getValue(WIFI to d1.id)
+        h.journal.entries.clear()
+
+        h.prober.liveDead += d1.tag
+        h.brain.onWake(25_000)
+        runCurrent()
+
+        assertEquals(0, h.libbox.resets)
+        assertEquals(emptyList(), h.libbox.outboundResets)
+        assertEquals("probeLive:${d1.tag}", h.journal.entries.single { it.startsWith("probe") })
+        val after = h.stats.map.getValue(WIFI to d1.id)
+        assertEquals(before.fail, after.fail, "a failure in the grace window is not recorded")
+        assertEquals(0, after.failStreak)
+    }
+
+    @Test
+    fun `an unblock right after the core started over skips the reset but still checks`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val h = Harness(this, listOf(d1))
+        h.alive(d1)
+        h.connectOn(WIFI)
+        advance(600_000)
+        h.brain.onNetworkUnblocked()
+        runCurrent()
+        assertEquals(1, h.libbox.resets)
+        h.journal.entries.clear()
+
+        advance(BrainConfig().resetCooldownMs - 1)
+        h.brain.onNetworkUnblocked()
+        runCurrent()
+
+        assertEquals(1, h.libbox.resets, "a flapping unblock does not drop every connection again")
+        assertEquals(listOf("probeLive:${d1.tag}"), h.journal.entries)
+
+        advance(1)
+        h.brain.onNetworkUnblocked()
+        runCurrent()
+        assertEquals(2, h.libbox.resets)
     }
 
     @Test
@@ -980,7 +1067,7 @@ class SelectorBrainTest {
         h.alive(d1)
         advance(10_000)
 
-        h.brain.onWake()
+        h.brain.onWake(25_000)
         runCurrent()
 
         h.assertOn(d1)
@@ -999,7 +1086,7 @@ class SelectorBrainTest {
         val before = h.stats.map.getValue(WIFI to d1.id)
 
         h.prober.liveDead += d1.tag
-        h.brain.onWake()
+        h.brain.onWake(25_000)
         runCurrent()
         h.prober.liveDead.clear()
         advance(3_000)
@@ -1025,7 +1112,7 @@ class SelectorBrainTest {
         val failsBefore = h.stats.map.getValue(WIFI to d1.id).fail
 
         h.kill(d1)
-        h.brain.onWake()
+        h.brain.onWake(25_000)
         runCurrent()
         advance(3_000)
 
@@ -1051,7 +1138,7 @@ class SelectorBrainTest {
         val before = h.stats.map.getValue(WIFI to d2.id)
 
         h.kill(d2)
-        h.brain.onWake()
+        h.brain.onWake(25_000)
         runCurrent()
         val probed = async { h.brain.probeSetPool() }
         runCurrent()

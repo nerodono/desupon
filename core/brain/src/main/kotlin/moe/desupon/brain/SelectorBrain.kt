@@ -53,6 +53,7 @@ import moe.desupon.brain.port.SocketProtector
 import moe.desupon.brain.port.SplitRuleRepo
 import moe.desupon.brain.port.TierLearningRepo
 import moe.desupon.brain.port.TierPlanner
+import moe.desupon.brain.port.TunnelRecovery
 import moe.desupon.brain.port.VpnControl
 import moe.desupon.brain.probe.ProbeActivity
 import moe.desupon.brain.probe.ProbeRequestResult
@@ -109,7 +110,7 @@ class SelectorBrain(
     private val selfPackage: String = ConfigGenerator.SELF_PACKAGE,
     private val selectionPort: SelectionPort = SelectionPort.All,
     private val activity: ProbeActivity = ProbeActivity(clock),
-) : VpnControl {
+) : VpnControl, TunnelRecovery {
     private val _state = MutableStateFlow<ConnState>(ConnState.Idle)
     override val state: StateFlow<ConnState> = _state.asStateFlow()
 
@@ -149,15 +150,15 @@ class SelectorBrain(
     }
 
     /**
-     * The device slept long enough for server-side UDP session state to die meanwhile: loaded outbounds that keep such state
-     * start over and the current node is checked.
+     * Loaded outbounds whose QUIC session the server may have dropped start over, after [BrainConfig.longSleepMs] also those
+     * pooling their flows on one TCP connection, then the current node is checked.
      */
-    fun onWake() {
-        sessionEvents?.trySend(Event.Wake)
+    override fun onWake(sleptMs: Long) {
+        sessionEvents?.trySend(Event.Wake(sleptMs))
     }
 
-    /** The system stopped blocking the app's network, which any connection may have lost packets to: the core starts over. */
-    fun onNetworkUnblocked() {
+    /** The core starts over, unless it just did, then the current node is checked. */
+    override fun onNetworkUnblocked() {
         sessionEvents?.trySend(Event.Unblocked)
     }
 
@@ -237,7 +238,7 @@ class SelectorBrain(
 
         data object CheckNow : Event
 
-        data object Wake : Event
+        data class Wake(val sleptMs: Long) : Event
 
         data object Unblocked : Event
 
@@ -566,8 +567,8 @@ class SelectorBrain(
             is Event.Split -> onSplit(event.split)
             is Event.Selection -> onSelection(event.selection)
             Event.CheckNow -> if (offline) Unit else check()
-            Event.Wake -> startOver(::resetSleepers)
-            Event.Unblocked -> startOver(::resetNetwork)
+            is Event.Wake -> startOver { resetSleepers(event.sleptMs) }
+            Event.Unblocked -> startOver(::resetNetworkIfDue)
             Event.AppsChanged -> loaded?.let { reapply(it.plan, split) } ?: Unit
             is Event.ProbeSet -> startSetProbe(event.done, event.full)
             is Event.Batch -> if (event.key == net.key) record(event.results) else Unit
@@ -627,11 +628,19 @@ class SelectorBrain(
             guard(Unit) { libbox.resetNetwork() }
         }
 
-        /** Only loaded nodes dialing through [SLEEP_FRAGILE] transports, whose clients cannot tell their server forgot them. */
-        private suspend fun resetSleepers() {
+        /** An unblock flapping around Doze maintenance windows drops every connection at most once per [BrainConfig.resetCooldownMs]. */
+        private suspend fun resetNetworkIfDue() {
+            val since = freshSinceMs
+            if (since == null || clock.elapsedMs() - since >= config.resetCooldownMs) resetNetwork()
+        }
+
+        /** Loaded nodes whose sessions a sleep of [sleptMs] may have killed unseen by their clients. */
+        private suspend fun resetSleepers(sleptMs: Long) {
             val l = loaded ?: return
+            val long = sleptMs >= config.longSleepMs
             for (node in l.plan.nodes) {
-                if (node.id.tag in l.tags && ConfigGenerator.dialedTypes(node).any { it in SLEEP_FRAGILE }) resetOutbound(node.id.tag)
+                if (node.id.tag !in l.tags) continue
+                if (ConfigGenerator.sleepFragile(node) || long && ConfigGenerator.pooled(node)) resetOutbound(node.id.tag)
             }
         }
 
@@ -1238,12 +1247,6 @@ class SelectorBrain(
     private companion object {
         val TIERS = setOf(Tier.DIRECT, Tier.RU)
         val WG_FAMILY = setOf(Protocol.WIREGUARD, Protocol.AMNEZIAWG)
-
-        /**
-         * QUIC transports whose server drops the session after its idle timeout while the device sleeps, unseen by a client on
-         * a clock that stopped; hysteria2 is left out because its patched client checks that itself on every send.
-         */
-        val SLEEP_FRAGILE = setOf("tuic", "juicity", "hysteria")
 
         fun Node.isWireGuardFamily(): Boolean = isEndpoint || protocol in WG_FAMILY
 
