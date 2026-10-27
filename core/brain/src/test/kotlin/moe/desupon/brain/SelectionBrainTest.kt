@@ -93,6 +93,30 @@ class SelectionBrainTest {
     }
 
     @Test
+    fun `picking a loaded node that fails only through stale connections resets its outbound and probes it again`() = runTest {
+        val a = Nodes.ss("a")
+        val b = Nodes.ss("b")
+        val h = Harness(this, listOf(a, b))
+        h.alive(a, b)
+        h.rtt(a to 10, b to 20)
+        h.connectOn(WIFI)
+        h.assertOn(a)
+        advance(120_000)
+        val failsBefore = h.stats.map.getValue(WIFI to b.id).fail
+        h.prober.liveDead += b.tag
+        h.libbox.onReset = { h.prober.liveDead.clear() }
+
+        h.select(LocationChoice.Node(b.id))
+        runCurrent()
+
+        h.assertOn(b)
+        assertEquals(listOf(b.tag), h.libbox.outboundResets)
+        assertEquals(0, h.libbox.resets)
+        assertEquals(failsBefore, h.stats.map.getValue(WIFI to b.id).fail, "the failure before the reset is not recorded")
+        assertEquals(1, h.libbox.reloads.size)
+    }
+
+    @Test
     fun `country choice keeps selection and failover inside the country`() = runTest {
         val nl1 = Nodes.ss("nl1", country = "NL")
         val de1 = Nodes.ss("de1", country = "DE")
@@ -111,7 +135,8 @@ class SelectionBrainTest {
         h.assertOn(nl2)
 
         h.kill(nl2)
-        advance(48_000)
+        // Past the first minute the outbound is reset and probed once more before giving up on it.
+        advance(51_000)
         val degraded = assertIs<ConnState.Degraded>(h.brain.state.value)
         assertEquals(FailReason.COUNTRY_UNAVAILABLE, degraded.reason)
         assertEquals("NL", degraded.detail)

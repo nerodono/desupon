@@ -1,0 +1,906 @@
+diff --git a/go.mod b/go.mod
+index c6327be..03433ac 100644
+--- a/go.mod
++++ b/go.mod
+@@ -10,6 +10,7 @@ require (
+ 	golang.org/x/crypto v0.54.0
+ 	golang.org/x/exp v0.0.0-20250911091902-df9299821621
+ 	golang.org/x/sync v0.22.0
++	golang.org/x/sys v0.47.0
+ )
+ 
+ require (
+@@ -23,6 +24,5 @@ require (
+ 	github.com/metacubex/utls v1.8.7 // indirect
+ 	github.com/quic-go/qpack v0.6.0 // indirect
+ 	golang.org/x/net v0.56.0 // indirect
+-	golang.org/x/sys v0.47.0 // indirect
+ 	golang.org/x/text v0.40.0 // indirect
+ )
+diff --git a/hysteria2/boottime_linux.go b/hysteria2/boottime_linux.go
+new file mode 100644
+index 0000000..3061447
+--- /dev/null
++++ b/hysteria2/boottime_linux.go
+@@ -0,0 +1,12 @@
++//go:build linux
++
++package hysteria2
++
++import "golang.org/x/sys/unix"
++
++func boottime() int64 {
++	var ts unix.Timespec
++	// CLOCK_BOOTTIME predates every kernel Go supports, so the call cannot fail.
++	_ = unix.ClockGettime(unix.CLOCK_BOOTTIME, &ts)
++	return ts.Nano()
++}
+diff --git a/hysteria2/boottime_other.go b/hysteria2/boottime_other.go
+new file mode 100644
+index 0000000..fc06c4f
+--- /dev/null
++++ b/hysteria2/boottime_other.go
+@@ -0,0 +1,10 @@
++//go:build !linux
++
++package hysteria2
++
++import "time"
++
++// Wall time also runs in sleep but, unlike boottime, steps when the clock is set.
++func boottime() int64 {
++	return time.Now().UnixNano()
++}
+diff --git a/hysteria2/client.go b/hysteria2/client.go
+index deac835..68f97ac 100644
+--- a/hysteria2/client.go
++++ b/hysteria2/client.go
+@@ -77,6 +77,8 @@ type Client struct {
+ 	bbrProfile         congestion_meta2.Profile
+ 	realmOptions       *realm.Options
+ 	controlClient      *realm.ControlClient
++	clock              func() clockReading
++	staleAfter         time.Duration
+ 
+ 	connAccess sync.Mutex
+ 	conn       *clientQUICConnection
+@@ -168,6 +170,8 @@ func NewClient(options ClientOptions) (*Client, error) {
+ 		bbrProfile:         bbrProfile,
+ 		realmOptions:       options.RealmOptions,
+ 		controlClient:      controlClient,
++		clock:              coarseClock,
++		staleAfter:         staleAfterFor(quicConfig),
+ 	}, nil
+ }
+ 
+@@ -175,8 +179,15 @@ func (c *Client) offer(ctx context.Context) (*clientQUICConnection, error) {
+ 	c.connAccess.Lock()
+ 	conn := c.conn
+ 	if conn != nil && conn.active() {
++		staleErr := conn.receive.staleError()
++		if staleErr == nil {
++			c.connAccess.Unlock()
++			return conn, nil
++		}
++		c.conn = nil
+ 		c.connAccess.Unlock()
+-		return conn, nil
++		conn.closeWithError(staleErr)
++		return c.offer(ctx)
+ 	}
+ 	pending := c.pending
+ 	if pending != nil {
+@@ -306,8 +317,9 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
+ 			return nil, err
+ 		}
+ 	}
+-	return c.authenticateAndWrap(ctx, rawConn, func(quicConnPtr **quic.Conn) (http.RoundTripper, error) {
+-		return qtls.CreateTransport(rawConn, quicConnPtr, c.tlsConfig, c.quicConfig)
++	receive := newReceiveTracker(c.clock, c.staleAfter)
++	return c.authenticateAndWrap(ctx, rawConn, receive, func(quicConnPtr **quic.Conn) (http.RoundTripper, error) {
++		return qtls.CreateTransport(&receiveConn{Conn: rawConn, receive: receive}, quicConnPtr, c.tlsConfig, c.quicConfig)
+ 	})
+ }
+ 
+@@ -393,8 +405,9 @@ func (c *Client) offerNewRealm(ctx context.Context) (*clientQUICConnection, erro
+ 		packetConn = NewSalamanderConn(packetConn, []byte(c.salamanderPassword))
+ 	}
+ 	peerAddr := M.SocksaddrFromNetIP(result.PeerAddr)
+-	conn, err := c.authenticateAndWrap(ctx, packetConn, func(quicConnPtr **quic.Conn) (http.RoundTripper, error) {
+-		return qtls.CreatePacketTransport(packetConn, peerAddr.UDPAddr(), quicConnPtr, c.tlsConfig, c.quicConfig)
++	receive := newReceiveTracker(c.clock, c.staleAfter)
++	conn, err := c.authenticateAndWrap(ctx, packetConn, receive, func(quicConnPtr **quic.Conn) (http.RoundTripper, error) {
++		return qtls.CreatePacketTransport(&receivePacketConn{PacketConn: packetConn, receive: receive}, peerAddr.UDPAddr(), quicConnPtr, c.tlsConfig, c.quicConfig)
+ 	})
+ 	if err != nil {
+ 		return nil, err
+@@ -554,7 +567,7 @@ func (c *Client) realmRacePunch(
+ 	return nil, realm.PunchResult{}, E.Cause(E.Errors(errs...), "realm punch")
+ }
+ 
+-func (c *Client) authenticateAndWrap(ctx context.Context, rawConn io.Closer, createTransport func(quicConnPtr **quic.Conn) (http.RoundTripper, error)) (*clientQUICConnection, error) {
++func (c *Client) authenticateAndWrap(ctx context.Context, rawConn io.Closer, receive *receiveTracker, createTransport func(quicConnPtr **quic.Conn) (http.RoundTripper, error)) (*clientQUICConnection, error) {
+ 	var quicConn *quic.Conn
+ 	http3Transport, err := createTransport(&quicConn)
+ 	if err != nil {
+@@ -613,6 +626,7 @@ func (c *Client) authenticateAndWrap(ctx context.Context, rawConn io.Closer, cre
+ 		udpDisabled: !authResponse.UDPEnabled,
+ 		udpConnMap:  make(map[uint32]*udpPacketConn),
+ 		closeIdle:   &c.closeIdle,
++		receive:     receive,
+ 	}
+ 	if !c.udpDisabled {
+ 		go c.loopMessages(conn)
+@@ -657,6 +671,8 @@ func (c *Client) ListenPacket(ctx context.Context) (net.PacketConn, error) {
+ 	clientPacketConn := newUDPPacketConn(c.ctx, conn.quicConn, func() {
+ 		conn.releaseUDPSession(sessionID)
+ 	})
++	// A long-lived session never passes through offer again, so its sends must catch a stale connection.
++	clientPacketConn.checkSend = conn.closeIfStale
+ 	conn.access.Lock()
+ 	select {
+ 	case <-conn.connDone:
+@@ -734,6 +750,15 @@ type clientQUICConnection struct {
+ 	udpSessionID uint32
+ 	streams      int
+ 	closeIdle    *atomic.Bool
++	receive      *receiveTracker
++}
++
++func (c *clientQUICConnection) closeIfStale() error {
++	err := c.receive.staleError()
++	if err != nil {
++		c.closeWithError(err)
++	}
++	return err
+ }
+ 
+ func (c *clientQUICConnection) active() bool {
+@@ -846,6 +871,10 @@ func (c *clientConn) Read(p []byte) (n int, err error) {
+ }
+ 
+ func (c *clientConn) Write(p []byte) (n int, err error) {
++	err = c.parent.closeIfStale()
++	if err != nil {
++		return
++	}
+ 	if !c.requestWritten {
+ 		buffer := protocol.WriteTCPRequest(c.destination.String(), p)
+ 		defer buffer.Release()
+diff --git a/hysteria2/packet.go b/hysteria2/packet.go
+index 1742026..0ad79e1 100644
+--- a/hysteria2/packet.go
++++ b/hysteria2/packet.go
+@@ -127,6 +127,7 @@ type udpPacketConn struct {
+ 	closeOnce       sync.Once
+ 	defragger       *udpDefragger
+ 	onDestroy       func()
++	checkSend       func() error
+ 	readWaitOptions N.ReadWaitOptions
+ 	readDeadline    pipe.Deadline
+ }
+@@ -185,6 +186,11 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
+ 		return net.ErrClosed
+ 	default:
+ 	}
++	if c.checkSend != nil {
++		if err := c.checkSend(); err != nil {
++			return err
++		}
++	}
+ 	if buffer.Len() > protocol.MaxUDPSize {
+ 		return &quic.DatagramTooLargeError{MaxDatagramPayloadSize: protocol.MaxUDPSize}
+ 	}
+@@ -223,6 +229,11 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+ 		return 0, net.ErrClosed
+ 	default:
+ 	}
++	if c.checkSend != nil {
++		if err = c.checkSend(); err != nil {
++			return
++		}
++	}
+ 	if len(p) > protocol.MaxUDPSize {
+ 		return 0, &quic.DatagramTooLargeError{MaxDatagramPayloadSize: protocol.MaxUDPSize}
+ 	}
+diff --git a/hysteria2/stale.go b/hysteria2/stale.go
+new file mode 100644
+index 0000000..1be9dae
+--- /dev/null
++++ b/hysteria2/stale.go
+@@ -0,0 +1,167 @@
++package hysteria2
++
++import (
++	"errors"
++	"io"
++	"net"
++	"sync/atomic"
++	"syscall"
++	"time"
++
++	"github.com/sagernet/quic-go"
++	"github.com/sagernet/sing-quic/hysteria"
++	E "github.com/sagernet/sing/common/exceptions"
++	N "github.com/sagernet/sing/common/network"
++)
++
++var errStaleConnection = E.New("connection is stale, the server has likely dropped it during device sleep")
++
++// minStaleAfter leaves room to retransmit a lost keepalive when the idle timeout is short.
++const minStaleAfter = 15 * time.Second
++
++// staleAfterFor sits at 2/3 of the idle timeout: above the idle/2 keepalive a healthy awake connection
++// always hears back from, below the point where the server, whose clock ran through the sleep, may have dropped it.
++func staleAfterFor(config *quic.Config) time.Duration {
++	idle := config.MaxIdleTimeout
++	if idle == 0 || config.ChromeParrot {
++		// quic-go's default and its Chrome-pinned value.
++		idle = hysteria.DefaultMaxIdleTimeout
++	}
++	return max(idle*2/3, minStaleAfter)
++}
++
++// minAsleep is the least sleep that makes a silence one quic-go's idle timer cannot see, well above coarseClock's skew;
++// a silence spent awake is a plain outage, which that timer still judges.
++const minAsleep = 2 * time.Second
++
++// clockReading pairs boottime, which runs on in device sleep, with the monotonic clock, which stops there as quic-go's timers do.
++type clockReading struct {
++	boot int64
++	mono int64
++}
++
++// receiveTracker times the server's silence on a clock that keeps running in device sleep, unlike quic-go's idle timer.
++type receiveTracker struct {
++	clock      func() clockReading
++	staleAfter time.Duration
++	lastBoot   atomic.Int64
++	lastMono   atomic.Int64
++}
++
++func newReceiveTracker(clock func() clockReading, staleAfter time.Duration) *receiveTracker {
++	tracker := &receiveTracker{clock: clock, staleAfter: staleAfter}
++	tracker.touch()
++	return tracker
++}
++
++func (t *receiveTracker) touch() {
++	now := t.clock()
++	t.lastBoot.Store(now.boot)
++	t.lastMono.Store(now.mono)
++}
++
++func (t *receiveTracker) count(int64) {
++	t.touch()
++}
++
++func (t *receiveTracker) staleError() error {
++	now := t.clock()
++	// Loaded in the reverse order of touch, so a racing receive can only shorten the silence.
++	lastMono := t.lastMono.Load()
++	silent := time.Duration(now.boot - t.lastBoot.Load())
++	if silent <= t.staleAfter {
++		return nil
++	}
++	asleep := silent - time.Duration(now.mono-lastMono)
++	if asleep < minAsleep {
++		return nil
++	}
++	return E.Cause(errStaleConnection, "nothing received for ", silent.Round(time.Second), ", ", asleep.Round(time.Second), " of it asleep")
++}
++
++// receiveConn stamps reads from the server socket; withSyscallConn unwraps it, so on quic-go's fd path the stamp runs as a read counter.
++type receiveConn struct {
++	net.Conn
++	receive *receiveTracker
++}
++
++func (c *receiveConn) Read(p []byte) (int, error) {
++	n, err := c.Conn.Read(p)
++	if err == nil {
++		c.receive.touch()
++	}
++	return n, err
++}
++
++func (c *receiveConn) UnwrapReader() (io.Reader, []N.CountFunc) {
++	return c.Conn, []N.CountFunc{c.receive.count}
++}
++
++func (c *receiveConn) UnwrapWriter() (io.Writer, []N.CountFunc) {
++	return c.Conn, nil
++}
++
++var _ quic.IOActivityConn = (*receivePacketConn)(nil)
++
++// receivePacketConn stamps reads from the server socket, through ReadFrom or, on quic-go's fd path, its activity callback.
++type receivePacketConn struct {
++	net.PacketConn
++	receive *receiveTracker
++}
++
++func (c *receivePacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
++	n, addr, err := c.PacketConn.ReadFrom(p)
++	if err == nil {
++		c.receive.touch()
++	}
++	return n, addr, err
++}
++
++func (c *receivePacketConn) SyscallConn() (syscall.RawConn, error) {
++	conn, isSyscallConn := c.PacketConn.(syscall.Conn)
++	if !isSyscallConn {
++		return nil, errors.ErrUnsupported
++	}
++	return conn.SyscallConn()
++}
++
++func (c *receivePacketConn) IOActivityFuncs() (onRead func(size int), onWrite func(size int)) {
++	var upstreamRead func(size int)
++	if activityConn, isActivityConn := c.PacketConn.(quic.IOActivityConn); isActivityConn {
++		upstreamRead, onWrite = activityConn.IOActivityFuncs()
++	}
++	return func(size int) {
++		c.receive.touch()
++		if upstreamRead != nil {
++			upstreamRead(size)
++		}
++	}, onWrite
++}
++
++const clockResample = time.Second
++
++type clockSample struct {
++	wall int64
++	boot int64
++}
++
++var (
++	lastClockSample atomic.Pointer[clockSample]
++	monoBase        = time.Now()
++)
++
++// coarseClock extrapolates the last boottime reading along the vDSO wall clock, which also runs in sleep,
++// and re-reads it every second or on a backward step, so clock adjustments skew it by under a second.
++func coarseClock() clockReading {
++	now := time.Now()
++	wall := now.UnixNano()
++	mono := int64(now.Sub(monoBase))
++	if sample := lastClockSample.Load(); sample != nil {
++		if elapsed := wall - sample.wall; elapsed >= 0 && elapsed < int64(clockResample) {
++			return clockReading{boot: sample.boot + elapsed, mono: mono}
++		}
++	}
++	boot := boottime()
++	lastClockSample.Store(&clockSample{wall: wall, boot: boot})
++	return clockReading{boot: boot, mono: mono}
++}
+diff --git a/hysteria2/stale_test.go b/hysteria2/stale_test.go
+new file mode 100644
+index 0000000..c131d2a
+--- /dev/null
++++ b/hysteria2/stale_test.go
+@@ -0,0 +1,522 @@
++package hysteria2
++
++import (
++	"context"
++	"crypto/ecdsa"
++	"crypto/elliptic"
++	"crypto/rand"
++	"crypto/tls"
++	"crypto/x509"
++	"crypto/x509/pkix"
++	"errors"
++	"io"
++	"math/big"
++	"net"
++	"net/netip"
++	"os"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/sagernet/quic-go"
++	"github.com/sagernet/sing-quic/hysteria"
++	"github.com/sagernet/sing/common/buf"
++	"github.com/sagernet/sing/common/logger"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++	aTLS "github.com/sagernet/sing/common/tls"
++)
++
++func TestStaleAfterFor(t *testing.T) {
++	for _, testCase := range []struct {
++		name   string
++		config *quic.Config
++		want   time.Duration
++	}{
++		{"hysteria default", &quic.Config{MaxIdleTimeout: hysteria.DefaultMaxIdleTimeout}, 20 * time.Second},
++		{"quic-go default", &quic.Config{}, 20 * time.Second},
++		{"long idle", &quic.Config{MaxIdleTimeout: time.Minute}, 40 * time.Second},
++		{"chrome parrot pins idle", &quic.Config{MaxIdleTimeout: time.Minute, ChromeParrot: true}, 20 * time.Second},
++		{"floor", &quic.Config{MaxIdleTimeout: 6 * time.Second}, minStaleAfter},
++	} {
++		if got := staleAfterFor(testCase.config); got != testCase.want {
++			t.Errorf("%s: %v, want %v", testCase.name, got, testCase.want)
++		}
++	}
++}
++
++func TestCoarseClockTracksKernel(t *testing.T) {
++	wall := time.Now().UnixNano()
++	for _, sample := range []*clockSample{
++		nil,
++		{wall: wall + int64(time.Hour)},
++		{wall: wall - int64(time.Hour)},
++	} {
++		lastClockSample.Store(sample)
++		// The first read must resample, the second extrapolates from it.
++		for range 2 {
++			before, monoBefore := boottime(), time.Since(monoBase)
++			coarse := coarseClock()
++			after, monoAfter := boottime(), time.Since(monoBase)
++			if coarse.boot < before-int64(5*time.Millisecond) || coarse.boot > after+int64(5*time.Millisecond) {
++				t.Fatalf("coarse boottime %d outside kernel reads [%d, %d] after sample %+v", coarse.boot, before, after, sample)
++			}
++			if coarse.mono < int64(monoBefore) || coarse.mono > int64(monoAfter) {
++				t.Fatalf("coarse monotonic %d outside reads [%d, %d]", coarse.mono, monoBefore, monoAfter)
++			}
++		}
++	}
++}
++
++func TestStaleErrorNeedsSleep(t *testing.T) {
++	clock := &fakeClock{}
++	tracker := newReceiveTracker(clock.read, 20*time.Second)
++	clock.sleep(15 * time.Second)
++	clock.advance(4 * time.Second)
++	if err := tracker.staleError(); err != nil {
++		t.Fatal("asleep, silence under staleAfter: ", err)
++	}
++
++	tracker.touch()
++	clock.advance(time.Minute)
++	clock.sleep(minAsleep - time.Millisecond)
++	if err := tracker.staleError(); err != nil {
++		t.Fatal("awake outage judged stale: ", err)
++	}
++	clock.sleep(time.Millisecond)
++	if err := tracker.staleError(); !errors.Is(err, errStaleConnection) {
++		t.Fatal("silence with sleep in it not stale: ", err)
++	}
++
++	tracker.touch()
++	clock.sleep(21 * time.Second)
++	if err := tracker.staleError(); !errors.Is(err, errStaleConnection) {
++		t.Fatal("sleep past staleAfter not stale: ", err)
++	}
++}
++
++func TestReceivePacketConnTracksReads(t *testing.T) {
++	clock := &fakeClock{}
++	tracker := newReceiveTracker(clock.read, time.Minute)
++	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer udpConn.Close()
++	conn := &receivePacketConn{PacketConn: udpConn, receive: tracker}
++	if _, err = conn.SyscallConn(); err != nil {
++		t.Fatal("socket hidden from quic-go's fd path: ", err)
++	}
++	onRead, _ := conn.IOActivityFuncs()
++	clock.advance(time.Second)
++	onRead(1)
++	if !clock.stamped(tracker) {
++		t.Fatal("fd path read not tracked")
++	}
++	sender, err := net.DialUDP("udp", nil, udpConn.LocalAddr().(*net.UDPAddr))
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer sender.Close()
++	if _, err = sender.Write([]byte("x")); err != nil {
++		t.Fatal(err)
++	}
++	clock.advance(time.Second)
++	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
++	if _, _, err = conn.ReadFrom(make([]byte, 16)); err != nil {
++		t.Fatal(err)
++	}
++	if !clock.stamped(tracker) {
++		t.Fatal("ReadFrom not tracked")
++	}
++	opaque := &receivePacketConn{PacketConn: struct{ net.PacketConn }{udpConn}, receive: tracker}
++	if _, err = opaque.SyscallConn(); err == nil {
++		t.Fatal("SyscallConn invented a socket for a conn without one")
++	}
++}
++
++var staleVariants = []struct {
++	name       string
++	salamander string
++}{
++	// Plain UDP runs on quic-go's fd path, salamander on reads through the conn chain.
++	{"plain", ""},
++	{"salamander", "obfs"},
++}
++
++func TestStaleConnectionReused(t *testing.T) {
++	for _, variant := range staleVariants {
++		t.Run(variant.name, func(t *testing.T) {
++			h := newStaleHarness(t, variant.salamander)
++			conn := h.offer(t)
++			session := h.listen(t)
++			for range 3 {
++				h.clock.sleep(h.client.staleAfter - time.Second)
++				if h.offer(t) != conn {
++					t.Fatal("fresh connection replaced")
++				}
++				// The reply restarts the silence, so the connection outlives staleAfter in total.
++				echoPacket(t, session)
++			}
++		})
++	}
++}
++
++func TestStaleConnectionReplaced(t *testing.T) {
++	for _, variant := range staleVariants {
++		t.Run(variant.name, func(t *testing.T) {
++			h := newStaleHarness(t, variant.salamander)
++			conn := h.offer(t)
++			h.server.silence(conn.quicConn.LocalAddr())
++			var replacement *clientQUICConnection
++			h.untilStale(t, func() bool {
++				replacement = h.offer(t)
++				return replacement != conn
++			})
++			waitStaleClosed(t, conn)
++			if !replacement.active() {
++				t.Fatal("replacement connection inactive")
++			}
++			echoPacket(t, h.listen(t))
++		})
++	}
++}
++
++func TestAwakeSilenceKeepsConnection(t *testing.T) {
++	for _, variant := range staleVariants {
++		t.Run(variant.name, func(t *testing.T) {
++			h := newStaleHarness(t, variant.salamander)
++			conn := h.offer(t)
++			h.server.silence(conn.quicConn.LocalAddr())
++			h.clock.advance(2 * h.client.staleAfter)
++			if h.offer(t) != conn {
++				t.Fatal("connection replaced after a silence spent awake")
++			}
++			h.untilStale(t, func() bool {
++				return h.offer(t) != conn
++			})
++			waitStaleClosed(t, conn)
++		})
++	}
++}
++
++func TestStaleConnectionClosesSessions(t *testing.T) {
++	for _, variant := range staleVariants {
++		t.Run(variant.name, func(t *testing.T) {
++			h := newStaleHarness(t, variant.salamander)
++			conn := h.offer(t)
++			session := h.listen(t)
++			echoPacket(t, session)
++			stream := h.dial(t)
++			echoStream(t, stream)
++			h.server.silence(conn.quicConn.LocalAddr())
++			var sendErr error
++			h.untilStale(t, func() bool {
++				_, sendErr = session.WriteTo([]byte("ping"), staleEchoDestination.UDPAddr())
++				return sendErr != nil
++			})
++			if !errors.Is(sendErr, errStaleConnection) {
++				t.Fatal("send failed for another reason: ", sendErr)
++			}
++			waitStaleClosed(t, conn)
++			_ = session.SetReadDeadline(time.Now().Add(5 * time.Second))
++			if _, _, err := session.ReadFrom(make([]byte, 64)); err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
++				t.Fatal("UDP session outlived its stale connection: ", err)
++			}
++			_ = stream.SetReadDeadline(time.Now().Add(5 * time.Second))
++			if _, err := stream.Read(make([]byte, 64)); err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
++				t.Fatal("stream outlived its stale connection: ", err)
++			}
++			echoPacket(t, h.listen(t))
++			echoStream(t, h.dial(t))
++		})
++	}
++}
++
++func TestStaleConnectionFailsStreamWrites(t *testing.T) {
++	for _, variant := range staleVariants {
++		t.Run(variant.name, func(t *testing.T) {
++			h := newStaleHarness(t, variant.salamander)
++			conn := h.offer(t)
++			stream := h.dial(t)
++			echoStream(t, stream)
++			h.server.silence(conn.quicConn.LocalAddr())
++			var writeErr error
++			h.untilStale(t, func() bool {
++				_, writeErr = stream.Write([]byte("ping"))
++				return writeErr != nil
++			})
++			if !errors.Is(writeErr, errStaleConnection) {
++				t.Fatal("write failed for another reason: ", writeErr)
++			}
++			waitStaleClosed(t, conn)
++			echoStream(t, h.dial(t))
++		})
++	}
++}
++
++const stalePassword = "stale-test"
++
++var staleEchoDestination = M.ParseSocksaddr("198.51.100.1:7")
++
++type staleHarness struct {
++	ctx    context.Context
++	client *Client
++	clock  *fakeClock
++	server *silencingPacketConn
++}
++
++func newStaleHarness(t *testing.T, salamanderPassword string) *staleHarness {
++	t.Helper()
++	ctx, cancel := context.WithCancel(context.Background())
++	t.Cleanup(cancel)
++	clientTLS, serverTLS := staleTLSConfigs(t)
++	udpConn, err := net.ListenPacket("udp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { _ = udpConn.Close() })
++	server := &silencingPacketConn{PacketConn: udpConn, silenced: make(map[netip.AddrPort]bool)}
++	service, err := NewService[string](ServiceOptions{
++		Context:            ctx,
++		Logger:             logger.NOP(),
++		SalamanderPassword: salamanderPassword,
++		TLSConfig:          serverTLS,
++		UDPTimeout:         time.Minute,
++		Handler:            echoHandler{},
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	service.UpdateUsers([]string{"user"}, []string{stalePassword})
++	if err = service.Start(server); err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { _ = service.Close() })
++	client, err := NewClient(ClientOptions{
++		Context:            ctx,
++		Dialer:             N.SystemDialer,
++		Logger:             logger.NOP(),
++		ServerAddress:      M.SocksaddrFromNet(udpConn.LocalAddr()),
++		SalamanderPassword: salamanderPassword,
++		Password:           stalePassword,
++		TLSConfig:          clientTLS,
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	clock := &fakeClock{}
++	client.clock = clock.read
++	t.Cleanup(func() { _ = client.CloseWithError(os.ErrClosed) })
++	return &staleHarness{ctx: ctx, client: client, clock: clock, server: server}
++}
++
++func (h *staleHarness) offer(t *testing.T) *clientQUICConnection {
++	t.Helper()
++	ctx, cancel := context.WithTimeout(h.ctx, 10*time.Second)
++	defer cancel()
++	conn, err := h.client.offer(ctx)
++	if err != nil {
++		t.Fatal(err)
++	}
++	return conn
++}
++
++func (h *staleHarness) listen(t *testing.T) net.PacketConn {
++	t.Helper()
++	session, err := h.client.ListenPacket(h.ctx)
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { _ = session.Close() })
++	return session
++}
++
++func (h *staleHarness) dial(t *testing.T) net.Conn {
++	t.Helper()
++	stream, err := h.client.DialConn(h.ctx, staleEchoDestination)
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { _ = stream.Close() })
++	return stream
++}
++
++// untilStale sleeps the clock past staleAfter until probe sees it act; packets already in flight when the
++// server went silent may still freshen the connection once or twice.
++func (h *staleHarness) untilStale(t *testing.T, probe func() bool) {
++	t.Helper()
++	deadline := time.Now().Add(5 * time.Second)
++	for {
++		h.clock.sleep(h.client.staleAfter + time.Second)
++		if probe() {
++			return
++		}
++		if time.Now().After(deadline) {
++			t.Fatal("connection never went stale")
++		}
++		time.Sleep(10 * time.Millisecond)
++	}
++}
++
++func waitStaleClosed(t *testing.T, conn *clientQUICConnection) {
++	t.Helper()
++	select {
++	case <-conn.connDone:
++	case <-time.After(5 * time.Second):
++		t.Fatal("stale connection left open")
++	}
++	if !errors.Is(conn.connErr, errStaleConnection) {
++		t.Fatal("connection closed for another reason: ", conn.connErr)
++	}
++}
++
++func echoPacket(t *testing.T, session net.PacketConn) {
++	t.Helper()
++	if _, err := session.WriteTo([]byte("hello"), staleEchoDestination.UDPAddr()); err != nil {
++		t.Fatal(err)
++	}
++	_ = session.SetReadDeadline(time.Now().Add(5 * time.Second))
++	buffer := make([]byte, 64)
++	n, _, err := session.ReadFrom(buffer)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if string(buffer[:n]) != "hello" {
++		t.Fatalf("echo %q", buffer[:n])
++	}
++}
++
++func echoStream(t *testing.T, stream net.Conn) {
++	t.Helper()
++	_ = stream.SetDeadline(time.Now().Add(5 * time.Second))
++	if _, err := stream.Write([]byte("hello")); err != nil {
++		t.Fatal(err)
++	}
++	buffer := make([]byte, 5)
++	if _, err := io.ReadFull(stream, buffer); err != nil {
++		t.Fatal(err)
++	}
++	if string(buffer) != "hello" {
++		t.Fatalf("echo %q", buffer)
++	}
++	_ = stream.SetDeadline(time.Time{})
++}
++
++type fakeClock struct {
++	access sync.Mutex
++	now    clockReading
++}
++
++func (c *fakeClock) read() clockReading {
++	c.access.Lock()
++	defer c.access.Unlock()
++	return c.now
++}
++
++// advance passes time awake, which both clocks count.
++func (c *fakeClock) advance(d time.Duration) {
++	c.access.Lock()
++	c.now.boot += int64(d)
++	c.now.mono += int64(d)
++	c.access.Unlock()
++}
++
++// sleep passes time in device sleep, which only boottime counts.
++func (c *fakeClock) sleep(d time.Duration) {
++	c.access.Lock()
++	c.now.boot += int64(d)
++	c.access.Unlock()
++}
++
++func (c *fakeClock) stamped(tracker *receiveTracker) bool {
++	now := c.read()
++	return tracker.lastBoot.Load() == now.boot && tracker.lastMono.Load() == now.mono
++}
++
++// silencingPacketConn drops the server's packets to silenced clients, like a server that has forgotten them.
++type silencingPacketConn struct {
++	net.PacketConn
++	access   sync.RWMutex
++	silenced map[netip.AddrPort]bool
++}
++
++func (c *silencingPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
++	c.access.RLock()
++	silenced := c.silenced[M.SocksaddrFromNet(addr).Unwrap().AddrPort()]
++	c.access.RUnlock()
++	if silenced {
++		return len(p), nil
++	}
++	return c.PacketConn.WriteTo(p, addr)
++}
++
++func (c *silencingPacketConn) silence(addr net.Addr) {
++	c.access.Lock()
++	c.silenced[M.SocksaddrFromNet(addr).Unwrap().AddrPort()] = true
++	c.access.Unlock()
++}
++
++type echoHandler struct{}
++
++func (echoHandler) NewConnectionEx(_ context.Context, conn net.Conn, _ M.Socksaddr, _ M.Socksaddr, _ N.CloseHandlerFunc) {
++	defer conn.Close()
++	if N.ReportHandshakeSuccess(conn) != nil {
++		return
++	}
++	_, _ = io.Copy(conn, conn)
++}
++
++func (echoHandler) NewPacketConnectionEx(_ context.Context, conn N.PacketConn, _ M.Socksaddr, _ M.Socksaddr, _ N.CloseHandlerFunc) {
++	defer conn.Close()
++	for {
++		buffer := buf.NewPacket()
++		destination, err := conn.ReadPacket(buffer)
++		if err != nil {
++			buffer.Release()
++			return
++		}
++		if conn.WritePacket(buffer, destination) != nil {
++			return
++		}
++	}
++}
++
++type staleTLSConfig struct {
++	config *tls.Config
++}
++
++func staleTLSConfigs(t *testing.T) (client aTLS.Config, server aTLS.ServerConfig) {
++	t.Helper()
++	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	template := &x509.Certificate{
++		SerialNumber: big.NewInt(1),
++		Subject:      pkix.Name{CommonName: "hy2.test"},
++		DNSNames:     []string{"hy2.test"},
++		NotBefore:    time.Now().Add(-time.Hour),
++		NotAfter:     time.Now().Add(time.Hour),
++	}
++	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
++	if err != nil {
++		t.Fatal(err)
++	}
++	certificate := tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
++	return &staleTLSConfig{&tls.Config{ServerName: "hy2.test", InsecureSkipVerify: true}},
++		&staleTLSConfig{&tls.Config{Certificates: []tls.Certificate{certificate}}}
++}
++
++func (c *staleTLSConfig) ServerName() string                  { return c.config.ServerName }
++func (c *staleTLSConfig) SetServerName(serverName string)     { c.config.ServerName = serverName }
++func (c *staleTLSConfig) NextProtos() []string                { return c.config.NextProtos }
++func (c *staleTLSConfig) SetNextProtos(nextProto []string)    { c.config.NextProtos = nextProto }
++func (c *staleTLSConfig) HandshakeTimeout() time.Duration     { return 0 }
++func (c *staleTLSConfig) SetHandshakeTimeout(time.Duration)   {}
++func (c *staleTLSConfig) STDConfig() (*aTLS.STDConfig, error) { return c.config, nil }
++func (c *staleTLSConfig) Client(net.Conn) (aTLS.Conn, error)  { return nil, os.ErrInvalid }
++func (c *staleTLSConfig) Server(net.Conn) (aTLS.Conn, error)  { return nil, os.ErrInvalid }
++func (c *staleTLSConfig) Clone() aTLS.Config                  { return &staleTLSConfig{c.config.Clone()} }
++func (c *staleTLSConfig) Start() error                        { return nil }
++func (c *staleTLSConfig) Close() error                        { return nil }

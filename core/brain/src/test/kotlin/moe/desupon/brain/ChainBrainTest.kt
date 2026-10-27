@@ -75,7 +75,8 @@ class ChainBrainTest {
         assertEquals(ChainStep.Sub(1, s2), h.brain.activeStep.value)
 
         h.kill(b)
-        advance(48_000)
+        // Past the first minute the outbound is reset and probed once more before the switch.
+        advance(51_000)
         h.assertOn(c)
         assertEquals(ChainStep.Rest, h.brain.activeStep.value)
         assertEquals(1, h.libbox.reloads.size)

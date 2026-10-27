@@ -28,6 +28,10 @@ class LastConfigTest {
 
         override suspend fun closeConnections() = Unit
 
+        override suspend fun resetNetwork() = Unit
+
+        override suspend fun resetOutbound(tag: String) = Unit
+
         override suspend fun stop() = Unit
     }
 

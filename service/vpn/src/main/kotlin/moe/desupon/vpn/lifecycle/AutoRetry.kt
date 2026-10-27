@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -18,16 +19,19 @@ import moe.desupon.brain.FailReason
 import moe.desupon.brain.port.ConnState
 
 /**
- * Simple mode's reconnect after a failed session: waits 30 s, 60 s, 2 min, then 5 min per attempt, or only until the network changes.
+ * Simple mode's reconnect after a failed session: waits 30 s, 60 s, 2 min, then 5 min per attempt, or only until the network changes
+ * or the device wakes from a long sleep.
  * Confined to the thread of [scope].
  *
  * @param enabled simple mode; null until the setting is read.
  * @param networks the current network's identity, null while offline.
+ * @param wakes emits on each wake from a sleep long enough for tunnel state to die, see [WakeDetector].
  */
 class AutoRetry(
     private val scope: CoroutineScope,
     private val enabled: StateFlow<Boolean?>,
     private val networks: Flow<Any?>,
+    private val wakes: Flow<Any?> = emptyFlow(),
 ) {
     private var attempt = 0
     private var wait: Job? = null
@@ -51,6 +55,7 @@ class AutoRetry(
                     emit(true)
                 },
                 networks.distinctUntilChanged().drop(1).filterNotNull().map { true },
+                wakes.map { true },
                 enabled.filter { it == false }.map { false },
             ).first()
             wait = null

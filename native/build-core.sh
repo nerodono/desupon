@@ -77,7 +77,10 @@ mkdir -p build
 go test -count=1 -v -ldflags=-checklinkname=0 -tags "$TAGS" ./... 2>&1 | tee build/go-test.log
 # interop/ is its own workspace, so the reference servers it runs never enter the AAR's build list.
 (cd interop && go vet -tags "$TAGS" ./... && go test -count=1 -v -ldflags=-checklinkname=0 -tags "$TAGS" ./...) 2>&1 | tee -a build/go-test.log
-for t in TestOwnSocketsDetectsLoopbackListeners TestProbeOpensNoListeners TestProbeStrict204 TestProbeWireGuardNode TestProbeConfigRejectsListenersAndSharedState TestSelectOutboundSwitchesSelector TestControlWithoutService TestMaskSecrets TestGoldenConfigs TestGoldenInvalidConfigsRejected TestRealityFragmentedHandshake TestProbeSkipsChainHops TestProbeStagedWarm TestProbeSecondRequestFailureKeepsFirst TestProbePerNodeTimeouts TestProbeConfigIPv4Only TestThroughputCapsAndCounts TestHysteria2ObfsInterop TestJuicityInterop TestJuicityUDPInterop; do
+# Tests our patches add to sing-quic; go.work above makes them run against the core's dependency versions.
+(cd build/src/sing-quic && go vet -tags "$TAGS" ./hysteria2/ && go test -count=1 -v -ldflags=-checklinkname=0 -tags "$TAGS" ./hysteria2/) 2>&1 | tee -a build/go-test.log
+for t in TestOwnSocketsDetectsLoopbackListeners TestProbeOpensNoListeners TestProbeStrict204 TestProbeWireGuardNode TestProbeConfigRejectsListenersAndSharedState TestSelectOutboundSwitchesSelector TestControlWithoutService TestMaskSecrets TestGoldenConfigs TestGoldenInvalidConfigsRejected TestRealityFragmentedHandshake TestProbeSkipsChainHops TestProbeStagedWarm TestProbeSecondRequestFailureKeepsFirst TestProbePerNodeTimeouts TestProbeConfigIPv4Only TestThroughputCapsAndCounts TestHysteria2ObfsInterop TestJuicityInterop TestJuicityUDPInterop \
+  TestStaleAfterFor TestCoarseClockTracksKernel TestStaleErrorNeedsSleep TestReceivePacketConnTracksReads TestStaleConnectionReused TestStaleConnectionReplaced TestAwakeSilenceKeepsConnection TestStaleConnectionClosesSessions TestStaleConnectionFailsStreamWrites TestResetOutboundResetsItsChainOnly; do
   grep -q -- "--- PASS: $t " build/go-test.log || { echo "build-core: required test $t did not pass" >&2; exit 1; }
 done
 if grep -q -- "--- SKIP" build/go-test.log; then

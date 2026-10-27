@@ -4,6 +4,7 @@ import (
 	"context"
 
 	box "github.com/sagernet/sing-box"
+	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/experimental/libbox"
 	"github.com/sagernet/sing-box/protocol/group"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -32,6 +33,30 @@ func CloseConnections(server *libbox.CommandServer) error {
 	})
 }
 
+// ResetNetwork drops every connection and resets outbound clients, DNS transports and the TUN NAT, as a network change would.
+func ResetNetwork(server *libbox.CommandServer) error {
+	return onGoroutine(func() error {
+		b, err := runningBox(server)
+		if err != nil {
+			return maskErr(err)
+		}
+		b.Network().ResetNetwork(context.Background())
+		return nil
+	})
+}
+
+// ResetOutbound resets the clients of one outbound and of the outbounds it dials through, as a network change would;
+// only connections over them break.
+func ResetOutbound(server *libbox.CommandServer, tag string) error {
+	return onGoroutine(func() error {
+		b, err := runningBox(server)
+		if err != nil {
+			return maskErr(err)
+		}
+		return maskErr(resetIn(b, tag))
+	})
+}
+
 func runningBox(server *libbox.CommandServer) (*box.Box, error) {
 	if server == nil || server.StartedService == nil {
 		return nil, E.New("core: no command server")
@@ -54,6 +79,27 @@ func selectIn(b *box.Box, groupTag, outboundTag string) error {
 	}
 	if !selector.SelectOutbound(outboundTag) {
 		return E.New("select: outbound not in group: ", outboundTag)
+	}
+	return nil
+}
+
+func resetIn(b *box.Box, tag string) error {
+	seen := make(map[string]bool)
+	for pending := []string{tag}; len(pending) > 0; {
+		next := pending[0]
+		pending = pending[1:]
+		if seen[next] {
+			continue
+		}
+		seen[next] = true
+		outbound, ok := b.Outbound().Outbound(next)
+		if !ok {
+			return E.New("reset: outbound not found: ", next)
+		}
+		if listener, ok := outbound.(adapter.InterfaceUpdateListener); ok {
+			listener.InterfaceUpdated(context.Background())
+		}
+		pending = append(pending, outbound.Dependencies()...)
 	}
 	return nil
 }

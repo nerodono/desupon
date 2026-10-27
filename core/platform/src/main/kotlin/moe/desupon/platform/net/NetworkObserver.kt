@@ -29,9 +29,13 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.telephony.TelephonyManager
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterNotNull
@@ -68,6 +72,14 @@ class NetworkObserver(context: Context) {
     private val _current = MutableStateFlow<UnderlyingNetwork?>(null)
     val current: StateFlow<UnderlyingNetwork?> = _current.asStateFlow()
 
+    private val _unblocked = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** The system lifted a block on this app's traffic over the current network, e.g. after Doze or app standby. */
+    val unblocked: SharedFlow<Unit> = _unblocked.asSharedFlow()
+
+    /** Touched only by [callback]. */
+    private var blockedOn: Network? = null
+
     private val listeners = CopyOnWriteArrayList<(UnderlyingNetwork?) -> Unit>()
     private val lock = Any()
     private var registered = false
@@ -91,6 +103,15 @@ class NetworkObserver(context: Context) {
 
         override fun onLost(network: Network) {
             if (_current.value?.network == network) publish(null)
+        }
+
+        override fun onBlockedStatusChanged(network: Network, blocked: Boolean) {
+            if (blocked) {
+                blockedOn = network
+            } else if (blockedOn == network) {
+                blockedOn = null
+                _unblocked.tryEmit(Unit)
+            }
         }
     }
 
