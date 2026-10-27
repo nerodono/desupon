@@ -96,7 +96,10 @@ class ChainTest {
         assertAt(true, hops.last(), "tls.record_fragment")
         assertEquals("dialer proxy chain longer than 3", r.reason("too deep"))
         assertEquals(
-            listOf(SkippedEntry(9, "trojan", SkipReason.MALFORMED), SkippedEntry(10, "trojan", SkipReason.MALFORMED)),
+            listOf(
+                SkippedEntry(9, "trojan", SkipReason.MALFORMED, "dialer proxy loop"),
+                SkippedEntry(10, "trojan", SkipReason.MALFORMED, "dialer proxy target missing"),
+            ),
             r.skipped,
         )
     }
@@ -115,7 +118,7 @@ class ChainTest {
         val body = Fx.text("chains/xray.json")
         val badKey = Fx.parse(body.replace("c3ludGhldGljLXJlbGF5LXJlYWxpdHkta2V5LTAwMDE", "c2hvcnQ"))
         assertTrue(badKey.nodes.none { it.displayName == "🇩🇪 relay via RU" })
-        assertTrue(SkippedEntry(0, "vless", SkipReason.MALFORMED) in badKey.skipped)
+        assertTrue(SkippedEntry(0, "vless", SkipReason.MALFORMED, "REALITY public key is not 32 bytes") in badKey.skipped, "${badKey.skipped}")
 
         val badFlow = Fx.parse(body.replace("\"id\": \"00000000-0000-4000-8000-0000000000e2\", \"flow\": \"xtls-rprx-vision\"", "\"id\": \"00000000-0000-4000-8000-0000000000e2\", \"flow\": \"xtls-rprx-direct\""))
         assertEquals("dialer proxy: flow xtls-rprx-direct", badFlow.reason("🇩🇪 relay via RU"))
@@ -144,7 +147,7 @@ class ChainTest {
         assertEquals("dialer proxy through a proxy group", r.reason("🇳🇱 NL via group"))
         assertTrue(n.getValue("🇫🇮 FI direct dialer").chain().isEmpty())
         assertEquals(Capability.SUPPORTED, n.getValue("ru-entry").capability)
-        assertEquals(listOf(SkippedEntry(5, "trojan", SkipReason.MALFORMED)), r.skipped)
+        assertEquals(listOf(SkippedEntry(5, "trojan", SkipReason.MALFORMED, "dialer proxy target missing")), r.skipped)
     }
 
     @Test
@@ -160,7 +163,10 @@ class ChainTest {
         assertAt("wireguard", n.getValue("🇸🇪 se-via-wg").chain().single(), "type")
         assertAt("trojan", n.getValue("🇯🇵 wg-via-ru").chain().single(), "type")
         assertEquals("detour through an outbound group", r.reason("🇳🇱 nl-via-group"))
-        assertEquals(listOf(SkippedEntry(7, "trojan", SkipReason.MALFORMED), SkippedEntry(8, "trojan", SkipReason.MALFORMED)), r.skipped)
+        assertEquals(
+            listOf(SkippedEntry(7, "trojan", SkipReason.MALFORMED, "dialer proxy loop"), SkippedEntry(8, "trojan", SkipReason.MALFORMED, "dialer proxy loop")),
+            r.skipped,
+        )
     }
 
     @Test

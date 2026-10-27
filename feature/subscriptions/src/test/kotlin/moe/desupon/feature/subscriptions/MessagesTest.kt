@@ -2,8 +2,10 @@ package moe.desupon.feature.subscriptions
 
 import moe.desupon.data.fetch.FetchError
 import moe.desupon.data.repo.AddResult
+import moe.desupon.data.repo.ConfigImportResult
 import moe.desupon.data.repo.UpdateResult
 import moe.desupon.model.subscription.SubId
+import moe.desupon.parser.ConfigError
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -73,7 +75,7 @@ class MessagesTest {
         assertEquals(res(R.string.subs_add_nothing), Messages.add(AddResult.NothingFound))
         assertEquals(res(R.string.subs_add_exists), Messages.add(AddResult.AlreadyExists(SubId(1))))
         assertEquals(res(R.string.subs_add_exists), Messages.add(AddResult.Added(emptyMap())))
-        assertEquals(UiText.Plural(R.plurals.subs_result_imported, 4), Messages.add(AddResult.Imported(SubId(1), 4)))
+        assertEquals(UiText.Plural(R.plurals.subs_add_looks_like_configs, 4), Messages.add(AddResult.LooksLikeConfigs(4)))
         assertEquals(
             UiText.Plural(R.plurals.subs_result_added, 2),
             Messages.add(AddResult.Added(mapOf(SubId(1) to UpdateResult.Updated(1, 0), SubId(2) to UpdateResult.Updated(2, 0)))),
@@ -82,6 +84,32 @@ class MessagesTest {
             res(R.string.subs_result_added_failed, res(R.string.subs_error_unauthorized, 403)),
             Messages.add(AddResult.Added(mapOf(SubId(1) to UpdateResult.Failed(FetchError.Http(403))))),
         )
+    }
+
+    @Test
+    fun `config import results`() {
+        val two = UiText.Plural(R.plurals.subs_configs_added, 2)
+        assertEquals(two, Messages.configs(ConfigImportResult.Imported(listOf(SubId(1), SubId(2)), 2, 0, 0)))
+        assertEquals(
+            res(R.string.subs_configs_added_left_out, two, 1, 3),
+            Messages.configs(ConfigImportResult.Imported(listOf(SubId(1), SubId(2)), 2, 1, 3)),
+        )
+        assertEquals(res(R.string.subs_configs_all_saved), Messages.configs(ConfigImportResult.Imported(emptyList(), 0, 2, 0)))
+        assertEquals(res(R.string.subs_configs_is_subscription), Messages.configs(ConfigImportResult.SubscriptionUrls))
+        assertEquals(res(R.string.subs_configs_nothing), Messages.configs(ConfigImportResult.NothingFound(null)))
+        assertEquals(res(R.string.subs_config_error_format), Messages.configs(ConfigImportResult.NothingFound(ConfigError.NotAConfig)))
+    }
+
+    @Test
+    fun `config errors name the field but carry no content`() {
+        assertEquals(
+            res(R.string.subs_config_error_malformed_detail, "vless", "missing uuid"),
+            Messages.configError(ConfigError.Malformed("vless", "missing uuid")),
+        )
+        assertEquals(res(R.string.subs_config_error_malformed, "?"), Messages.configError(ConfigError.Malformed(null, null)))
+        assertEquals(res(R.string.subs_config_error_several, 3), Messages.configError(ConfigError.Several(3)))
+        assertEquals(res(R.string.subs_config_error_scheme, "anytls"), Messages.configError(ConfigError.UnknownScheme("anytls")))
+        assertNull(Messages.configError(null))
     }
 
     @Test

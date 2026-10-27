@@ -5,6 +5,18 @@ import moe.desupon.model.Secret
 @JvmInline
 value class SubId(val value: Long)
 
+/** What a subscription row holds; every kind feeds the same node pool, sets and chains. */
+enum class SubscriptionKind {
+    /** Fetched from provider URLs. */
+    SUBSCRIPTION,
+
+    /** Pasted subscription content, edited as a whole. */
+    LIST,
+
+    /** One server profile the user imported or entered: a share link or a sing-box outbound. */
+    CONFIG,
+}
+
 /** `subscription-userinfo` header; byte counters and unix seconds, 0 meaning unlimited/none. */
 data class UserInfo(
     val upload: Long,

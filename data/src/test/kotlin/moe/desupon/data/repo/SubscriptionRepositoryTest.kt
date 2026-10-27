@@ -14,7 +14,9 @@ import moe.desupon.data.fetch.FetchTrigger
 import moe.desupon.data.fetch.SubscriptionFetcher
 import moe.desupon.data.inMemoryDb
 import moe.desupon.model.subscription.SubId
+import moe.desupon.model.subscription.SubscriptionKind
 import moe.desupon.model.subscription.UserInfo
+import moe.desupon.parser.ConfigError
 import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Before
@@ -185,31 +187,92 @@ class SubscriptionRepositoryTest {
     }
 
     @Test
-    fun pastedLinksBecomeALocalSubscription() = runTest {
-        val r = assertIs<AddResult.Imported>(repo.addFromText("\n" + Links.body("X", "Y") + "\n"))
+    fun pastedLinksBecomeOneConfigEach() = runTest {
+        val r = assertIs<ConfigImportResult.Imported>(repo.importConfigs("\n" + Links.body("X", "Y") + "\n"))
+        assertEquals(2, r.ids.size)
         assertEquals(2, r.nodes)
-        val entry = repo.subscriptions.first().single()
-        assertTrue(entry.isLocal)
-        assertTrue(entry.info.url.isEmpty())
-        assertEquals(UpdateResult.Local, repo.update(r.id))
+        val entries = repo.subscriptions.first()
+        assertEquals(listOf(SubscriptionKind.CONFIG, SubscriptionKind.CONFIG), entries.map { it.kind })
+        assertTrue(entries.all { it.isLocal && it.info.url.isEmpty() })
+        assertEquals(listOf("X", "Y"), entries.map { it.info.title })
+        assertEquals(listOf(Links.trojan("X"), Links.trojan("Y")), r.ids.map { repo.configSource(it) })
+        assertEquals(UpdateResult.Local, repo.update(r.ids[0]))
         assertEquals(listOf("X", "Y"), nodes.snapshot().map { it.displayName })
-        assertEquals(UpdateResult.Updated(2, 0), repo.reparseCached(r.id))
+        assertEquals(UpdateResult.Updated(1, 0), repo.reparseCached(r.ids[0]))
+        assertNull(repo.localText(r.ids[0]))
+    }
+
+    @Test
+    fun configsAlreadySavedAreSkippedOnImport() = runTest {
+        repo.importConfigs(Links.body("X"))
+        val r = assertIs<ConfigImportResult.Imported>(repo.importConfigs(Links.body("X", "Y", "Y")))
+        assertEquals(1, r.ids.size)
+        assertEquals(2, r.duplicates)
+        assertEquals(listOf("X", "Y"), repo.subscriptions.first().map { it.info.title })
+        assertEquals(ConfigImportResult.Imported(emptyList(), 0, 1, 0), repo.importConfigs(Links.trojan("X")))
+    }
+
+    @Test
+    fun structuredBodiesImportAsOutboundJson() = runTest {
+        val json = """{"outbounds":[
+            {"type":"trojan","tag":"J1","server":"j1.example.com","server_port":443,"password":"a","tls":{"enabled":true}},
+            {"type":"direct","tag":"direct"},
+            {"type":"trojan","tag":"J2","server":"j2.example.com","server_port":443,"password":"b","tls":{"enabled":true}}]}"""
+        val r = assertIs<ConfigImportResult.Imported>(repo.importConfigs(json))
+        assertEquals(2, r.ids.size)
+        val sources = r.ids.map { repo.configSource(it)!! }
+        assertTrue(sources.all { it.trimStart().startsWith("{") && "\"tag\"" in it }, sources.toString())
+        assertEquals(listOf("J1", "J2"), nodes.snapshot().map { it.displayName })
+    }
+
+    @Test
+    fun subscriptionAndConfigImportRefuseEachOthersText() = runTest {
+        assertEquals(AddResult.LooksLikeConfigs(2), repo.addSubscriptions(Links.body("X", "Y")))
+        assertEquals(ConfigImportResult.SubscriptionUrls, repo.importConfigs("${url("/sub/1")}\n${url("/sub/2")}"))
+        assertTrue(repo.subscriptions.first().isEmpty())
     }
 
     @Test
     fun pastedUrlsAreAddedAsSubscriptions() = runTest {
         server.enqueue(subResponse(Links.body("A")))
         server.enqueue(subResponse(Links.body("B")))
-        val r = assertIs<AddResult.Added>(repo.addFromText("${url("/sub/1")}\n${url("/sub/2")}"))
+        val r = assertIs<AddResult.Added>(repo.addSubscriptions("${url("/sub/1")}\n${url("/sub/2")}"))
         assertEquals(2, r.results.size)
         assertEquals(listOf("A", "B"), nodes.snapshot().map { it.displayName })
+        assertTrue(repo.subscriptions.first().all { it.kind == SubscriptionKind.SUBSCRIPTION })
     }
 
     @Test
     fun textWithoutNodesAddsNothing() = runTest {
-        assertEquals(AddResult.NothingFound, repo.addFromText("hello there"))
-        assertEquals(AddResult.NothingFound, repo.addFromText("   "))
+        assertEquals(AddResult.NothingFound, repo.addSubscriptions("hello there"))
+        assertEquals(AddResult.NothingFound, repo.addSubscriptions("   "))
+        assertEquals(ConfigImportResult.NothingFound(ConfigError.NotAConfig), repo.importConfigs("hello there"))
+        assertEquals(ConfigImportResult.NothingFound(ConfigError.Empty), repo.importConfigs("   "))
+        val broken = assertIs<ConfigImportResult.NothingFound>(repo.importConfigs("vless://@h.example.com:443"))
+        assertEquals(ConfigError.Malformed("vless", "missing uuid"), broken.error)
         assertTrue(repo.subscriptions.first().isEmpty())
+    }
+
+    @Test
+    fun configIsCreatedAndEditedOnlyWithValidText() = runTest {
+        assertIs<ConfigSaveResult.Invalid>(repo.createConfig("trojan://@nope"))
+        assertEquals(ConfigSaveResult.Invalid(ConfigError.Several(2)), repo.createConfig(Links.body("X", "Y")))
+        val id = assertIs<ConfigSaveResult.Saved>(repo.createConfig("  " + Links.trojan("X") + "\n")).id
+        assertEquals(Links.trojan("X"), repo.configSource(id))
+        val before = nodes.snapshot()
+
+        assertIs<ConfigSaveResult.Invalid>(repo.updateConfig(id, "nothing here"))
+        assertEquals(before, nodes.snapshot())
+        assertEquals(Links.trojan("X"), repo.configSource(id))
+
+        assertEquals(ConfigSaveResult.Saved(id), repo.updateConfig(id, Links.trojan("Z")))
+        assertEquals(listOf("Z"), nodes.snapshot().map { it.displayName })
+        assertEquals("Z", repo.subscriptions.first().single().info.title)
+        assertEquals(Links.trojan("Z"), repo.configSource(id))
+
+        val remote = addOk(path = "/sub/r")
+        assertEquals(ConfigSaveResult.NotFound, repo.updateConfig(remote, Links.trojan("Q")))
+        assertNull(repo.configSource(remote))
     }
 
     @Test
@@ -231,7 +294,8 @@ class SubscriptionRepositoryTest {
         assertIs<UpdateResult.Updated>(repo.update(id))
         assertEquals(0, repo.subscriptions.first().single().skippedCount)
 
-        val local = assertIs<AddResult.Imported>(repo.addFromText(Links.trojan("L") + "\n" + broken))
-        assertEquals(1, repo.subscriptions.first().single { it.info.id == local.id }.skippedCount)
+        val configs = assertIs<ConfigImportResult.Imported>(repo.importConfigs(Links.trojan("L") + "\n" + broken))
+        assertEquals(1, configs.skipped)
+        assertEquals(1, configs.ids.size)
     }
 }

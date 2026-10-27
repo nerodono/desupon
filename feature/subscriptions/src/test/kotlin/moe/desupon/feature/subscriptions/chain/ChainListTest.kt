@@ -111,4 +111,33 @@ class ChainListTest {
         assertNull(last.down)
         assertEquals(listOf(a, c, b), last.up!!.applyTo(listOf(a, b, c)))
     }
+
+    @Test
+    fun `an edit of a filtered chain keeps hidden rows in place`() {
+        // a and c are subscriptions, b and d configs; the subscriptions tab shows a, c.
+        val full = listOf(a, b, c)
+        val subs = setOf(a, c)
+        val moveUp = ChainList.toFull(ChainOp.Move(c, 0), full, subs)!!
+        assertEquals(listOf(c, a, b), moveUp.applyTo(full))
+        val moveDown = ChainList.toFull(ChainOp.Move(a, 1), full, subs)!!
+        assertEquals(listOf(b, c, a), moveDown.applyTo(full))
+        assertEquals(ChainOp.Remove(c), ChainList.toFull(ChainOp.Remove(c), full, subs))
+        assertNull(ChainList.toFull(ChainOp.Remove(d), full, setOf(b, d)))
+    }
+
+    @Test
+    fun `an add lands before its visible successor or after its predecessor`() {
+        val full = listOf(a, b, c)
+        val configs = setOf(b, d)
+        assertEquals(listOf(a, d, b, c), ChainList.toFull(ChainOp.Add(d, 0), full, configs)!!.applyTo(full))
+        assertEquals(listOf(a, b, d, c), ChainList.toFull(ChainOp.Add(d), full, configs)!!.applyTo(full))
+        assertEquals(listOf(a, b, c, d), ChainList.toFull(ChainOp.Add(d), full, setOf(d))!!.applyTo(full))
+    }
+
+    @Test
+    fun `a move that keeps the order of the full chain is dropped`() {
+        val full = listOf(a, b, c)
+        assertNull(ChainList.toFull(ChainOp.Move(a, 0), full, setOf(a, c)))
+        assertNull(ChainList.toFull(ChainOp.Add(a), full, setOf(a, c)))
+    }
 }

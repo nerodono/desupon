@@ -112,7 +112,7 @@ class BodyFormatTest {
         val r = Fx.parse(Fx.text("sip008.json"))
         assertEquals(BodyFormat.SIP008, r.format)
         assertEquals(2, r.nodes.size)
-        assertEquals(listOf(SkippedEntry(2, "ss", SkipReason.MALFORMED)), r.skipped)
+        assertEquals(listOf(SkippedEntry(2, "ss", SkipReason.MALFORMED, "bad port")), r.skipped)
         val sg = r.nodes[0].json()
         assertAt("obfs-local", sg, "plugin")
         assertAt("obfs=http;obfs-host=www.example.org", sg, "plugin_opts")

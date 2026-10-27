@@ -37,9 +37,14 @@ internal data class SubscriptionEntity(
     /** Entries the last successful parse could not read (unknown, encrypted or broken); null before the first one. */
     val skippedCount: Int? = null,
     val createdAt: Long,
+    /** A [moe.desupon.model.subscription.SubscriptionKind] name; [local] is true for every kind but SUBSCRIPTION. */
+    @ColumnInfo(defaultValue = "SUBSCRIPTION") val kind: String = KIND_SUBSCRIPTION,
+    /** A config's text, a share link or sing-box outbound JSON; null for other kinds. */
+    val source: String? = null,
 ) {
     companion object {
         const val INTERVAL_MANUAL = 0
+        const val KIND_SUBSCRIPTION = "SUBSCRIPTION"
     }
 }
 

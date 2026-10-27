@@ -17,7 +17,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -34,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
@@ -41,21 +44,26 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.desupon.feature.subscriptions.AddDraft
+import moe.desupon.feature.subscriptions.AddTarget
 import moe.desupon.feature.subscriptions.R
 import moe.desupon.feature.subscriptions.UiText
 import moe.desupon.feature.subscriptions.qr.QrDecoder
 import moe.desupon.feature.subscriptions.qr.QrScannerDialog
 import moe.desupon.feature.subscriptions.resolve
 
+/** Adds subscriptions or configs, per [AddDraft.target]; [onManual] opens the config editor instead. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun AddSubscriptionDialog(
+internal fun AddDialog(
     draft: AddDraft,
     onTextChange: (String) -> Unit,
     onError: (UiText) -> Unit,
     onSubmit: () -> Unit,
+    onSwitch: () -> Unit,
+    onManual: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val config = draft.target == AddTarget.CONFIG
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var scanning by rememberSaveable { mutableStateOf(false) }
@@ -80,22 +88,31 @@ internal fun AddSubscriptionDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(dismissOnClickOutside = !draft.submitting),
-        title = { Text(stringResource(R.string.subs_add_title)) },
+        title = { Text(stringResource(if (config) R.string.subs_config_add_title else R.string.subs_add_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = draft.text,
                     onValueChange = onTextChange,
-                    label = { Text(stringResource(R.string.subs_add_field)) },
-                    placeholder = { Text(stringResource(R.string.subs_add_field_hint)) },
+                    label = { Text(stringResource(if (config) R.string.subs_config_add_field else R.string.subs_add_field)) },
+                    placeholder = { Text(stringResource(if (config) R.string.subs_config_add_field_hint else R.string.subs_add_field_hint)) },
                     minLines = 3,
                     maxLines = 8,
                     enabled = !draft.submitting,
                     isError = draft.error != null,
                     supportingText = draft.error?.let { error -> { Text(error.resolve()) } },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                draft.switchTo?.let { to ->
+                    FilledTonalButton(onClick = onSwitch, enabled = !draft.submitting) {
+                        Text(stringResource(if (to == AddTarget.CONFIG) R.string.subs_add_switch_to_configs else R.string.subs_add_switch_to_subscription))
+                    }
+                }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (config) {
+                        OutlinedButton(enabled = !draft.submitting, onClick = onManual) { Text(stringResource(R.string.subs_config_add_manual)) }
+                    }
                     OutlinedButton(enabled = !draft.submitting, onClick = {
                         val text = readClipboard(context)
                         if (text.isNullOrBlank()) onError(UiText.Res(R.string.subs_add_clipboard_empty)) else onTextChange(text)

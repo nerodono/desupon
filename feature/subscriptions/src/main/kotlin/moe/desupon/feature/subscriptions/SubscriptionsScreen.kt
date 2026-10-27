@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -41,10 +42,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.desupon.feature.subscriptions.chain.ChainOp
+import moe.desupon.feature.subscriptions.chain.ChainRowUi
 import moe.desupon.feature.subscriptions.chain.chainBoxBackground
 import moe.desupon.feature.subscriptions.chain.chainBoxItems
 import moe.desupon.feature.subscriptions.chain.rememberChainDragState
 import moe.desupon.feature.subscriptions.chain.rememberChainReorderState
+import moe.desupon.feature.subscriptions.configs.ConfigEditorScreen
+import moe.desupon.feature.subscriptions.configs.ConfigEditorViewModel
 import moe.desupon.feature.subscriptions.editor.SubscriptionEditorScreen
 import moe.desupon.feature.subscriptions.editor.SubscriptionEditorViewModel
 import moe.desupon.feature.subscriptions.sets.SetActions
@@ -52,12 +56,16 @@ import moe.desupon.feature.subscriptions.sets.SetCard
 import moe.desupon.feature.subscriptions.sets.SetEditorDialog
 import moe.desupon.feature.subscriptions.sets.SetsTab
 import moe.desupon.feature.subscriptions.sets.SetsViewModel
-import moe.desupon.feature.subscriptions.ui.AddSubscriptionDialog
+import moe.desupon.feature.subscriptions.ui.AddDialog
 import moe.desupon.feature.subscriptions.ui.CardActions
+import moe.desupon.feature.subscriptions.ui.ConfigActions
+import moe.desupon.feature.subscriptions.ui.ConfigCard
 import moe.desupon.feature.subscriptions.ui.ConfirmDialog
 import moe.desupon.feature.subscriptions.ui.DeleteDialog
+import moe.desupon.feature.subscriptions.ui.QrShareDialog
 import moe.desupon.feature.subscriptions.ui.SubsIcons
 import moe.desupon.feature.subscriptions.ui.SubscriptionCard
+import moe.desupon.feature.subscriptions.ui.copySensitive
 import moe.desupon.feature.subscriptions.ui.displayTitle
 import moe.desupon.model.selection.ChainStep
 import moe.desupon.model.selection.SetId
@@ -67,7 +75,7 @@ import moe.desupon.ui.theme.desuStringResource
 import org.koin.compose.viewmodel.koinViewModel
 
 /**
- * Subscriptions and sets tabs plus the subscription editor.
+ * Subscriptions, configs and sets tabs plus their editors.
  * To land on a tab from elsewhere, call [SubscriptionImportRequests.openTab] before navigating here.
  */
 @Composable
@@ -76,17 +84,31 @@ fun SubscriptionsScreen(
     viewModel: SubscriptionsViewModel = koinViewModel(),
     setsViewModel: SetsViewModel = koinViewModel(),
     editorViewModel: SubscriptionEditorViewModel = koinViewModel(),
+    configViewModel: ConfigEditorViewModel = koinViewModel(),
 ) {
     val editing by editorViewModel.openId.collectAsStateWithLifecycle()
+    val configTarget by configViewModel.target.collectAsStateWithLifecycle()
     val draft by viewModel.draft.collectAsStateWithLifecycle()
 
     LaunchedEffect(viewModel) {
-        viewModel.tabRequests.collect { if (editorViewModel.draft.value?.dirty != true) editorViewModel.close() }
+        viewModel.tabRequests.collect {
+            if (editorViewModel.draft.value?.dirty != true) editorViewModel.close()
+            if (configViewModel.draft.value?.dirty != true) configViewModel.close()
+        }
     }
+    LaunchedEffect(configViewModel) { configViewModel.closed.collect(viewModel::notify) }
 
     val id = editing
-    if (id != null) {
-        SubscriptionEditorScreen(
+    when {
+        configTarget != null -> ConfigEditorScreen(
+            viewModel = configViewModel,
+            onDelete = {
+                configViewModel.close()
+                viewModel.delete(it, config = true)
+            },
+            modifier = modifier,
+        )
+        id != null -> SubscriptionEditorScreen(
             viewModel = editorViewModel,
             id = id,
             onDelete = {
@@ -95,16 +117,26 @@ fun SubscriptionsScreen(
             },
             modifier = modifier,
         )
-    } else {
-        Tabs(viewModel, setsViewModel, onOpen = editorViewModel::open, modifier = modifier)
+        else -> Tabs(
+            viewModel,
+            setsViewModel,
+            onOpen = editorViewModel::open,
+            onOpenConfig = { item -> if (item.isList) editorViewModel.open(item.id) else configViewModel.open(item.id) },
+            modifier = modifier,
+        )
     }
 
     draft?.let { d ->
-        AddSubscriptionDialog(
+        AddDialog(
             draft = d,
             onTextChange = viewModel::editAdd,
             onError = viewModel::addError,
             onSubmit = viewModel::submitAdd,
+            onSwitch = viewModel::switchAdd,
+            onManual = {
+                viewModel.dismissAdd()
+                configViewModel.openNew()
+            },
             onDismiss = viewModel::dismissAdd,
         )
     }
@@ -116,6 +148,7 @@ private fun Tabs(
     viewModel: SubscriptionsViewModel,
     setsViewModel: SetsViewModel,
     onOpen: (SubId) -> Unit,
+    onOpenConfig: (ConfigItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -124,11 +157,24 @@ private fun Tabs(
     val setDraft by setsViewModel.draft.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val resources = LocalResources.current
     var deleteItem by remember { mutableStateOf<SubscriptionItem?>(null) }
+    var deleteConfig by remember { mutableStateOf<ConfigItem?>(null) }
     var deleteSet by remember { mutableStateOf<SetCard?>(null) }
+    var qrText by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(viewModel) { viewModel.messages.collect { snackbar.showSnackbar(it.resolve(context)) } }
     LaunchedEffect(setsViewModel) { setsViewModel.messages.collect { snackbar.showSnackbar(it.resolve(context)) } }
+    LaunchedEffect(viewModel) {
+        viewModel.shares.collect { share ->
+            if (share.qr) {
+                qrText = share.text
+            } else {
+                copySensitive(context, share.text)
+                snackbar.showSnackbar(resources.getString(R.string.subs_config_copied))
+            }
+        }
+    }
 
     Scaffold(
         modifier = modifier,
@@ -152,7 +198,12 @@ private fun Tabs(
         floatingActionButton = {
             when (tab) {
                 SubscriptionsTab.SUBSCRIPTIONS -> ExtendedFloatingActionButton(
-                    onClick = { viewModel.openAdd() },
+                    onClick = { viewModel.openAdd(AddTarget.SUBSCRIPTION) },
+                    icon = { Icon(SubsIcons.Add, contentDescription = null) },
+                    text = { Text(stringResource(R.string.subs_add)) },
+                )
+                SubscriptionsTab.CONFIGS -> ExtendedFloatingActionButton(
+                    onClick = { viewModel.openAdd(AddTarget.CONFIG) },
                     icon = { Icon(SubsIcons.Add, contentDescription = null) },
                     text = { Text(stringResource(R.string.subs_add)) },
                 )
@@ -172,20 +223,49 @@ private fun Tabs(
             bottom = padding.calculateBottomPadding() + 88.dp,
         )
         when (tab) {
-            SubscriptionsTab.SUBSCRIPTIONS -> SubscriptionList(
-                state = state,
-                contentPadding = listPadding,
-                padding = padding,
-                onChain = viewModel::chain,
-                actions = { item ->
-                    CardActions(
-                        onOpen = { onOpen(item.id) },
-                        onUpdate = { viewModel.update(item.id) },
-                        onDelete = { deleteItem = item },
-                        onChain = viewModel::chain,
-                    )
-                },
-            )
+            SubscriptionsTab.SUBSCRIPTIONS -> when {
+                state.loading -> Loading(padding)
+                state.items.isEmpty() -> EmptyState(
+                    title = desuStringResource(R.string.subs_empty_title, R.string.subs_empty_title_desu),
+                    hint = stringResource(R.string.subs_empty_hint),
+                    modifier = Modifier.padding(padding),
+                )
+                else -> {
+                    val byId = remember(state.items) { state.items.associateBy { it.id } }
+                    PriorityList(state.chain, state.items.map { it.id }, state.activeStep, configs = false, listPadding, viewModel::chain) { sub, row, current ->
+                        val item = byId[sub] ?: return@PriorityList
+                        val actions = CardActions(
+                            onOpen = { onOpen(item.id) },
+                            onUpdate = { viewModel.update(item.id) },
+                            onDelete = { deleteItem = item },
+                            onChain = viewModel::chain,
+                        )
+                        SubscriptionCard(item = item, actions = actions, chain = row, current = current)
+                    }
+                }
+            }
+            SubscriptionsTab.CONFIGS -> when {
+                state.loading -> Loading(padding)
+                state.configs.isEmpty() -> EmptyState(
+                    title = stringResource(R.string.subs_configs_empty_title),
+                    hint = stringResource(R.string.subs_configs_empty_hint),
+                    modifier = Modifier.padding(padding),
+                )
+                else -> {
+                    val byId = remember(state.configs) { state.configs.associateBy { it.id } }
+                    PriorityList(state.configChain, state.configs.map { it.id }, state.activeStep, configs = true, listPadding, viewModel::configChain) { sub, row, current ->
+                        val item = byId[sub] ?: return@PriorityList
+                        val actions = ConfigActions(
+                            onOpen = { onOpenConfig(item) },
+                            onCopy = { viewModel.copyConfig(item.id) },
+                            onQr = { viewModel.showConfigQr(item.id) },
+                            onDelete = { deleteConfig = item },
+                            onChain = viewModel::configChain,
+                        )
+                        ConfigCard(item = item, actions = actions, chain = row, current = current)
+                    }
+                }
+            }
             SubscriptionsTab.SETS -> SetsTab(
                 state = sets,
                 actions = SetActions(
@@ -207,6 +287,29 @@ private fun Tabs(
                 deleteItem = null
             },
             onDismiss = { deleteItem = null },
+        )
+    }
+
+    deleteConfig?.let { item ->
+        ConfirmDialog(
+            title = stringResource(R.string.subs_config_delete_title),
+            text = stringResource(R.string.subs_config_delete_text, item.displayTitle()),
+            confirm = stringResource(R.string.subs_delete),
+            destructive = true,
+            onConfirm = {
+                viewModel.delete(item.id, config = true)
+                deleteConfig = null
+            },
+            onDismiss = { deleteConfig = null },
+        )
+    }
+
+    qrText?.let { text ->
+        QrShareDialog(
+            url = text,
+            onDismiss = { qrText = null },
+            title = stringResource(R.string.subs_config_qr_title),
+            warning = stringResource(R.string.subs_config_share_warning),
         )
     }
 
@@ -239,40 +342,30 @@ private fun Tabs(
 
 private fun SubscriptionsTab.label(): Int = when (this) {
     SubscriptionsTab.SUBSCRIPTIONS -> R.string.subs_tab_subscriptions
+    SubscriptionsTab.CONFIGS -> R.string.subs_tab_configs
     SubscriptionsTab.SETS -> R.string.subs_tab_sets
 }
 
 @Composable
-private fun SubscriptionList(
-    state: SubscriptionsUiState,
-    contentPadding: PaddingValues,
-    padding: PaddingValues,
-    actions: (SubscriptionItem) -> CardActions,
-    onChain: (ChainOp) -> Unit,
-) {
-    when {
-        state.loading -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
-        state.items.isEmpty() -> EmptyState(Modifier.padding(padding))
-        else -> PriorityList(state, contentPadding, actions, onChain)
-    }
+private fun Loading(padding: PaddingValues) {
+    Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
 }
 
-/** Every subscription in one list: the priority box of [SetId.ALL] first, then the rest. */
+/** [members] in one list: the priority box of [SetId.ALL] first, then the rest; [card] renders one member. */
 @Composable
 private fun PriorityList(
-    state: SubscriptionsUiState,
+    chain: List<SubId>,
+    members: List<SubId>,
+    step: ChainStep?,
+    configs: Boolean,
     contentPadding: PaddingValues,
-    actions: (SubscriptionItem) -> CardActions,
     onChain: (ChainOp) -> Unit,
+    card: @Composable (SubId, ChainRowUi, Boolean) -> Unit,
 ) {
-    val drag = rememberChainDragState(state.chain, state.items.map { it.id })
+    val drag = rememberChainDragState(chain, members)
     val listState = rememberLazyListState()
     val reorder = rememberChainReorderState(listState, drag)
     val haptics = LocalHapticFeedback.current
-    val byId = remember(state.items) { state.items.associateBy { it.id } }
-    val step = state.activeStep
     val colors = MaterialTheme.colorScheme
     LazyColumn(
         state = listState,
@@ -282,10 +375,9 @@ private fun PriorityList(
         contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        chainBoxItems(drag, reorder, haptics, restCurrent = step == ChainStep.Rest, onDrop = onChain) { row ->
-            val item = byId[row.id] ?: return@chainBoxItems
+        chainBoxItems(drag, reorder, haptics, restCurrent = step == ChainStep.Rest, onDrop = onChain, configs = configs) { row ->
             val current = row.step != null && step is ChainStep.Sub && step.id == row.id
-            SubscriptionCard(item = item, actions = actions(item), chain = row, current = current)
+            card(row.id, row, current)
         }
     }
 }
@@ -295,7 +387,7 @@ private fun UpdateAllButton(state: SubscriptionsUiState, onClick: () -> Unit) {
     val description = stringResource(R.string.subs_update_all_cd)
     TextButton(
         onClick = onClick,
-        enabled = !state.updatingAll && state.items.any { !it.isLocal },
+        enabled = !state.updatingAll && state.items.isNotEmpty(),
         modifier = Modifier.semantics { contentDescription = description },
     ) {
         if (state.updatingAll) {
@@ -309,7 +401,7 @@ private fun UpdateAllButton(state: SubscriptionsUiState, onClick: () -> Unit) {
 }
 
 @Composable
-private fun EmptyState(modifier: Modifier = Modifier) {
+private fun EmptyState(title: String, hint: String, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.fillMaxSize().padding(32.dp),
         verticalArrangement = Arrangement.Center,
@@ -322,10 +414,10 @@ private fun EmptyState(modifier: Modifier = Modifier) {
             modifier = Modifier.size(56.dp),
         )
         Spacer(Modifier.size(16.dp))
-        Text(desuStringResource(R.string.subs_empty_title, R.string.subs_empty_title_desu), style = MaterialTheme.typography.titleMedium)
+        Text(title, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.size(8.dp))
         Text(
-            text = stringResource(R.string.subs_empty_hint),
+            text = hint,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

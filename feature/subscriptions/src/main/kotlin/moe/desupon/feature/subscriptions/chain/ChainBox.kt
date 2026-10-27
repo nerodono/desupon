@@ -109,6 +109,7 @@ internal fun LazyListScope.chainBoxItems(
     restCurrent: Boolean,
     onDrop: (ChainOp) -> Unit,
     horizontalPadding: Dp = 0.dp,
+    configs: Boolean = false,
     row: @Composable (ChainRowUi) -> Unit,
 ) {
     val rows = drag.rows
@@ -121,10 +122,10 @@ internal fun LazyListScope.chainBoxItems(
         SubItem(reorder, haptics, drag, chain, r as ChainRow.Sub, i + 1, pad, onDrop, row)
     }
     item(key = ChainRow.BOUNDARY_KEY, contentType = ChainRow.BOUNDARY_KEY) {
-        ReorderableItem(reorder, key = ChainRow.BOUNDARY_KEY, modifier = pad) { ChainFooter(empty = boundary == 0) }
+        ReorderableItem(reorder, key = ChainRow.BOUNDARY_KEY, modifier = pad) { ChainFooter(empty = boundary == 0, configs = configs) }
     }
     item(key = REST_HEADER_KEY, contentType = REST_HEADER_KEY) {
-        RestHeader(current = restCurrent, empty = boundary == rows.lastIndex, modifier = pad)
+        RestHeader(current = restCurrent, empty = boundary == rows.lastIndex, configs = configs, modifier = pad)
     }
     items(rows.subList(boundary + 1, rows.size), key = { it.key }, contentType = { "chain-sub" }) { r ->
         SubItem(reorder, haptics, drag, chain, r as ChainRow.Sub, null, pad, onDrop, row)
@@ -142,7 +143,7 @@ private fun ChainHead(modifier: Modifier) {
 }
 
 @Composable
-private fun ChainFooter(empty: Boolean) {
+private fun ChainFooter(empty: Boolean, configs: Boolean) {
     if (empty) {
         val dash = MaterialTheme.colorScheme.outline
         Box(
@@ -161,7 +162,7 @@ private fun ChainFooter(empty: Boolean) {
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = stringResource(R.string.subs_chain_drop),
+                text = stringResource(if (configs) R.string.subs_chain_drop_config else R.string.subs_chain_drop),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -178,7 +179,7 @@ private fun ChainFooter(empty: Boolean) {
 }
 
 @Composable
-private fun RestHeader(current: Boolean, empty: Boolean, modifier: Modifier) {
+private fun RestHeader(current: Boolean, empty: Boolean, configs: Boolean, modifier: Modifier) {
     Column(modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
@@ -191,7 +192,7 @@ private fun RestHeader(current: Boolean, empty: Boolean, modifier: Modifier) {
         }
         if (empty) {
             Text(
-                text = stringResource(R.string.subs_chain_rest_empty),
+                text = stringResource(if (configs) R.string.subs_chain_rest_empty_config else R.string.subs_chain_rest_empty),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

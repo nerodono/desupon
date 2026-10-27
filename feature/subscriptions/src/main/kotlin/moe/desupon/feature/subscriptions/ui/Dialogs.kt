@@ -52,17 +52,22 @@ internal fun DeleteDialog(title: String, onConfirm: () -> Unit, onDismiss: () ->
     destructive = true,
 )
 
-/** The subscription link as a QR code, with a warning that whoever scans it gets the subscription. */
+/** [url] as a QR code, with a warning that whoever scans it gets the subscription, or the server for a config. */
 @Composable
-internal fun QrShareDialog(url: String, onDismiss: () -> Unit) {
+internal fun QrShareDialog(
+    url: String,
+    onDismiss: () -> Unit,
+    title: String = stringResource(R.string.subs_editor_qr_title),
+    warning: String = stringResource(R.string.subs_editor_share_warning),
+) {
     val bitmap = remember(url) { runCatching { QrEncoder.bitmap(url, QR_SIZE_PX).asImageBitmap() }.getOrNull() }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.subs_editor_qr_title)) },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = stringResource(R.string.subs_editor_share_warning),
+                    text = warning,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )

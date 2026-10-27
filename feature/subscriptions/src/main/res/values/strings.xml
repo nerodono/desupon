@@ -7,11 +7,12 @@
     <string name="subs_empty_title">Подписок пока нет</string>
     <string name="subs_empty_title_desu">Сад пока пуст, десу</string>
     <string name="subs_tab_subscriptions">Подписки</string>
+    <string name="subs_tab_configs">Конфиги</string>
     <string name="subs_tab_sets">Наборы</string>
     <string name="subs_edit">Изменить</string>
     <string name="subs_move_up">Выше</string>
     <string name="subs_move_down">Ниже</string>
-    <string name="subs_empty_hint">Добавьте ссылку на подписку, вставьте серверы из буфера или отсканируйте QR-код</string>
+    <string name="subs_empty_hint">Добавьте ссылку на подписку или отсканируйте её QR-код. Отдельные серверы добавляются на вкладке «Конфиги»</string>
 
     <!-- Card -->
     <string name="subs_untitled">Подписка №%1$d</string>
@@ -60,15 +61,27 @@
 
     <!-- Add -->
     <string name="subs_add_title">Новая подписка</string>
-    <string name="subs_add_field">Ссылка или серверы</string>
-    <string name="subs_add_field_hint">Ссылка на подписку, несколько ссылок по строкам или содержимое подписки</string>
+    <string name="subs_add_field">Ссылка на подписку</string>
+    <string name="subs_add_field_hint">https://… — несколько подписок по строкам, зеркала через |</string>
     <string name="subs_add_paste">Из буфера</string>
     <string name="subs_add_scan">Сканировать QR</string>
     <string name="subs_add_image">QR из фото</string>
     <string name="subs_add_confirm">Добавить</string>
     <string name="subs_add_clipboard_empty">В буфере обмена нет текста</string>
-    <string name="subs_add_nothing">Не найдено ни ссылки на подписку, ни серверов</string>
+    <string name="subs_add_nothing">Это не ссылка на подписку</string>
     <string name="subs_add_exists">Эта подписка уже добавлена</string>
+    <plurals name="subs_add_looks_like_configs" tools:ignore="UnusedQuantity">
+        <item quantity="one">Это не подписка, а %d конфиг сервера</item>
+        <item quantity="few">Это не подписка, а %d конфига серверов</item>
+        <item quantity="many">Это не подписка, а %d конфигов серверов</item>
+        <item quantity="other">Это не подписка, а %d конфига серверов</item>
+    </plurals>
+    <string name="subs_add_switch_to_configs">Добавить как конфиги</string>
+    <string name="subs_add_switch_to_subscription">Добавить как подписку</string>
+    <string name="subs_config_add_title">Новый конфиг</string>
+    <string name="subs_config_add_field">Конфиги</string>
+    <string name="subs_config_add_field_hint">vless://, hy2://, trojan://… — по одной ссылке в строке; подходят и JSON sing-box или Xray, YAML Clash</string>
+    <string name="subs_config_add_manual">Ввести вручную</string>
     <string name="subs_qr_not_found">QR-код не распознан</string>
     <string name="subs_qr_image_error">Не удалось открыть изображение</string>
     <string name="subs_camera_denied">Нет доступа к камере</string>
@@ -82,12 +95,16 @@
         <item quantity="many">Обновлено: %d серверов</item>
         <item quantity="other">Обновлено: %d сервера</item>
     </plurals>
-    <plurals name="subs_result_imported" tools:ignore="UnusedQuantity">
-        <item quantity="one">Добавлен %d сервер</item>
-        <item quantity="few">Добавлено %d сервера</item>
-        <item quantity="many">Добавлено %d серверов</item>
-        <item quantity="other">Добавлено %d сервера</item>
+    <plurals name="subs_configs_added" tools:ignore="UnusedQuantity">
+        <item quantity="one">Добавлен %d конфиг</item>
+        <item quantity="few">Добавлено %d конфига</item>
+        <item quantity="many">Добавлено %d конфигов</item>
+        <item quantity="other">Добавлено %d конфига</item>
     </plurals>
+    <string name="subs_configs_added_left_out">%1$s. Уже были: %2$d, не прочитано: %3$d</string>
+    <string name="subs_configs_all_saved">Эти конфиги уже добавлены</string>
+    <string name="subs_configs_is_subscription">Это ссылка на подписку, а не конфиг</string>
+    <string name="subs_configs_nothing">Не найдено ни одного конфига</string>
     <plurals name="subs_result_added" tools:ignore="UnusedQuantity">
         <item quantity="one">Добавлена %d подписка</item>
         <item quantity="few">Добавлено %d подписки</item>
@@ -138,6 +155,42 @@
     <string name="subs_chain_drag_cd">Перетащить</string>
     <string name="subs_chain_summary">⛓ %1$s</string>
     <string name="subs_chain_rest_short">остальные</string>
+    <string name="subs_chain_drop_config">Перетащите сюда конфиг, чтобы он пробовался первым</string>
+    <string name="subs_chain_rest_empty_config">Все конфиги в приоритете. Перетащите сюда конфиг, чтобы убрать его из очереди</string>
+
+    <!-- Configs -->
+    <string name="subs_configs_empty_title">Конфигов пока нет</string>
+    <string name="subs_configs_empty_hint">Добавьте ссылку на сервер (vless://, hy2://, trojan://…), отсканируйте QR-код или введите параметры вручную</string>
+    <string name="subs_config_untitled">Конфиг №%1$d</string>
+    <string name="subs_config_list_badge">список</string>
+    <string name="subs_config_more_cd">Действия с конфигом</string>
+    <string name="subs_config_copy">Скопировать</string>
+    <string name="subs_config_copied">Конфиг скопирован. В нём ключи доступа к серверу — не делитесь им с посторонними</string>
+    <string name="subs_config_qr_title">Конфиг</string>
+    <string name="subs_config_share_warning">Кто отсканирует этот код, получит доступ к серверу. Показывайте только своим устройствам.</string>
+    <string name="subs_config_delete_title">Удалить конфиг?</string>
+    <string name="subs_config_delete_text">«%1$s» будет удалён с устройства.</string>
+    <string name="subs_config_deleted">Конфиг удалён</string>
+    <string name="subs_config_new_title">Новый конфиг</string>
+    <string name="subs_config_title">Конфиг</string>
+    <string name="subs_config_mode_form">Форма</string>
+    <string name="subs_config_mode_text">Текст</string>
+    <string name="subs_config_text">Ссылка или JSON</string>
+    <string name="subs_config_text_hint">Одна ссылка (vless://, hy2://, trojan://…) или один outbound sing-box в JSON</string>
+    <string name="subs_config_preview">Проверка</string>
+    <string name="subs_config_protocol">Протокол</string>
+    <string name="subs_config_form_unavailable">Этот конфиг нельзя открыть в форме — редактируйте текст</string>
+    <string name="subs_config_form_pick_protocol">Выберите протокол</string>
+    <string name="subs_config_created">Конфиг добавлен</string>
+    <string name="subs_config_discard_text">Изменения в конфиге будут потеряны.</string>
+    <string name="subs_config_error_empty">Введите ссылку или JSON конфига</string>
+    <string name="subs_config_error_format">Не похоже на конфиг: нужна ссылка вида vless://… или JSON outbound sing-box</string>
+    <string name="subs_config_error_several">Конфигов здесь: %1$d, а нужен один. Несколько сразу добавляются кнопкой «Добавить» на вкладке «Конфиги»</string>
+    <string name="subs_config_error_scheme">Протокол «%1$s» не поддерживается</string>
+    <string name="subs_config_error_not_imported">Ссылки «%1$s://» не импортируются</string>
+    <string name="subs_config_error_encrypted">Ссылка зашифрована провайдером, прочитать её нельзя</string>
+    <string name="subs_config_error_malformed">Ошибка в конфиге %1$s</string>
+    <string name="subs_config_error_malformed_detail">Ошибка в конфиге %1$s: %2$s</string>
 
     <!-- Sets -->
     <string name="subs_sets_explain">Набор — какие подписки участвуют в автовыборе</string>
