@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -84,6 +85,12 @@ internal fun SubscriptionCard(
     }
 }
 
+/** What a card is, so subscriptions and configs read apart where both share the priority box. */
+@Composable
+internal fun KindIcon(icon: ImageVector, description: Int) {
+    Icon(icon, contentDescription = stringResource(description), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+}
+
 @Composable
 private fun CardBody(item: SubscriptionItem, actions: CardActions, chain: ChainRowUi?, current: Boolean, modifier: Modifier) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
@@ -95,6 +102,7 @@ private fun CardBody(item: SubscriptionItem, actions: CardActions, chain: ChainR
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 chain?.step?.let { StepNumber(it) }
+                KindIcon(SubsIcons.Feed, R.string.subs_kind_subscription_cd)
                 Text(
                     text = item.displayTitle(),
                     style = MaterialTheme.typography.titleMedium,

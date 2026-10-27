@@ -176,4 +176,16 @@ class NodeRulesTest {
         )
         assertTrue("h3 ALPN on a TCP transport" in NodeRules.violations(o, endpoint = false))
     }
+
+    @Test
+    fun `a gecko range the core refuses is a violation`() {
+        fun gecko(sizes: String) = Fixtures.parse(
+            """{"type":"hysteria2","tag":"n-0000000000000002","server":"203.0.113.9","server_port":443,"password":"synthetic",
+               "obfs":{"type":"gecko","password":"o"$sizes},"tls":{"enabled":true,"server_name":"h.example.com"},"domain_resolver":"local"}""",
+        )
+        assertTrue("gecko packet size range" in NodeRules.violations(gecko(""","min_packet_size":1300"""), endpoint = false))
+        assertTrue("gecko packet size range" in NodeRules.violations(gecko(""","max_packet_size":3000"""), endpoint = false))
+        assertFalse("gecko packet size range" in NodeRules.violations(gecko(""), endpoint = false))
+        assertFalse("gecko packet size range" in NodeRules.violations(gecko(""","min_packet_size":300,"max_packet_size":1400"""), endpoint = false))
+    }
 }

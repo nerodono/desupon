@@ -25,7 +25,7 @@ import java.io.File
         DisabledNodeEntity::class,
         SubChainEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 internal abstract class DesuponDatabase : RoomDatabase() {

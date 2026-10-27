@@ -7,11 +7,12 @@
     <string name="subs_empty_title">Подписок пока нет</string>
     <string name="subs_empty_title_desu">Сад пока пуст, десу</string>
     <string name="subs_tab_subscriptions">Подписки</string>
+    <string name="subs_tab_configs">Конфиги</string>
     <string name="subs_tab_sets">Наборы</string>
     <string name="subs_edit">Изменить</string>
     <string name="subs_move_up">Выше</string>
     <string name="subs_move_down">Ниже</string>
-    <string name="subs_empty_hint">Добавьте ссылку на подписку, вставьте серверы из буфера или отсканируйте QR-код</string>
+    <string name="subs_empty_hint">Добавьте ссылку на подписку или отсканируйте её QR-код. Отдельные серверы добавляются на вкладке «Конфиги»</string>
 
     <!-- Card -->
     <string name="subs_untitled">Подписка №%1$d</string>
@@ -60,15 +61,24 @@
 
     <!-- Add -->
     <string name="subs_add_title">Новая подписка</string>
-    <string name="subs_add_field">Ссылка или серверы</string>
-    <string name="subs_add_field_hint">Ссылка на подписку, несколько ссылок по строкам или содержимое подписки</string>
+    <string name="subs_add_field">Ссылка на подписку</string>
+    <string name="subs_add_field_hint">https://… — несколько подписок по строкам, зеркала через |</string>
     <string name="subs_add_paste">Из буфера</string>
     <string name="subs_add_scan">Сканировать QR</string>
     <string name="subs_add_image">QR из фото</string>
     <string name="subs_add_confirm">Добавить</string>
     <string name="subs_add_clipboard_empty">В буфере обмена нет текста</string>
-    <string name="subs_add_nothing">Не найдено ни ссылки на подписку, ни серверов</string>
+    <string name="subs_add_nothing">Это не ссылка на подписку</string>
     <string name="subs_add_exists">Эта подписка уже добавлена</string>
+    <string name="subs_add_looks_like_configs">Это не подписка, а конфиги серверов: %1$d</string>
+    <string name="subs_add_mixed">Здесь вместе подписки (%1$d) и конфиги серверов (%2$d)</string>
+    <string name="subs_add_switch_all">Добавить всё</string>
+    <string name="subs_add_switch_to_configs">Добавить как конфиги</string>
+    <string name="subs_add_switch_to_subscription">Добавить как подписку</string>
+    <string name="subs_config_add_title">Новый конфиг</string>
+    <string name="subs_config_add_field">Конфиги</string>
+    <string name="subs_config_add_field_hint">vless://, hy2://, trojan://… — по одной ссылке в строке; подходят и JSON sing-box или Xray, YAML Clash</string>
+    <string name="subs_config_add_manual">Ввести вручную</string>
     <string name="subs_qr_not_found">QR-код не распознан</string>
     <string name="subs_qr_image_error">Не удалось открыть изображение</string>
     <string name="subs_camera_denied">Нет доступа к камере</string>
@@ -82,12 +92,16 @@
         <item quantity="many">Обновлено: %d серверов</item>
         <item quantity="other">Обновлено: %d сервера</item>
     </plurals>
-    <plurals name="subs_result_imported" tools:ignore="UnusedQuantity">
-        <item quantity="one">Добавлен %d сервер</item>
-        <item quantity="few">Добавлено %d сервера</item>
-        <item quantity="many">Добавлено %d серверов</item>
-        <item quantity="other">Добавлено %d сервера</item>
+    <plurals name="subs_configs_added" tools:ignore="UnusedQuantity">
+        <item quantity="one">Добавлен %d конфиг</item>
+        <item quantity="few">Добавлено %d конфига</item>
+        <item quantity="many">Добавлено %d конфигов</item>
+        <item quantity="other">Добавлено %d конфига</item>
     </plurals>
+    <string name="subs_configs_added_left_out">%1$s. Уже были: %2$d, не прочитано: %3$d</string>
+    <string name="subs_configs_all_saved">Эти конфиги уже добавлены</string>
+    <string name="subs_configs_is_subscription">Это ссылка на подписку, а не конфиг</string>
+    <string name="subs_configs_nothing">Не найдено ни одного конфига</string>
     <plurals name="subs_result_added" tools:ignore="UnusedQuantity">
         <item quantity="one">Добавлена %d подписка</item>
         <item quantity="few">Добавлено %d подписки</item>
@@ -138,9 +152,201 @@
     <string name="subs_chain_drag_cd">Перетащить</string>
     <string name="subs_chain_summary">⛓ %1$s</string>
     <string name="subs_chain_rest_short">остальные</string>
+    <string name="subs_chain_drop_config">Перетащите сюда конфиг, чтобы он пробовался первым</string>
+    <string name="subs_chain_rest_empty_config">Все конфиги в приоритете. Перетащите сюда конфиг, чтобы убрать его из очереди</string>
+
+    <!-- Configs -->
+    <string name="subs_configs_empty_title">Конфигов пока нет</string>
+    <string name="subs_configs_empty_hint">Добавьте ссылку на сервер (vless://, hy2://, trojan://…), отсканируйте QR-код или введите параметры вручную</string>
+    <string name="subs_config_untitled">Конфиг №%1$d</string>
+    <string name="subs_config_list_badge">список</string>
+    <string name="subs_config_more_cd">Действия с конфигом</string>
+    <string name="subs_config_copy">Скопировать</string>
+    <string name="subs_config_copied">Конфиг скопирован. В нём ключи доступа к серверу — не делитесь им с посторонними</string>
+    <string name="subs_config_qr_title">Конфиг</string>
+    <string name="subs_config_share_warning">Кто отсканирует этот код, получит доступ к серверу. Показывайте только своим устройствам.</string>
+    <string name="subs_config_delete_title">Удалить конфиг?</string>
+    <string name="subs_config_delete_text">«%1$s» будет удалён с устройства.</string>
+    <string name="subs_config_deleted">Конфиг удалён</string>
+    <string name="subs_config_new_title">Новый конфиг</string>
+    <string name="subs_config_title">Конфиг</string>
+    <string name="subs_config_mode_form">Форма</string>
+    <string name="subs_config_mode_text">Текст</string>
+    <string name="subs_config_text">Ссылка или JSON</string>
+    <string name="subs_config_text_hint">Одна ссылка (vless://, hy2://, trojan://…) или один outbound sing-box в JSON</string>
+    <string name="subs_config_preview">Проверка</string>
+    <string name="subs_config_protocol">Протокол</string>
+    <string name="subs_config_form_unavailable">Этот конфиг нельзя открыть в форме — редактируйте текст</string>
+    <string name="subs_config_form_pick_protocol">Выберите протокол</string>
+    <string name="subs_config_created">Конфиг добавлен</string>
+    <string name="subs_config_discard_text">Изменения в конфиге будут потеряны.</string>
+    <string name="subs_config_error_empty">Введите ссылку или JSON конфига</string>
+    <string name="subs_config_error_format">Не похоже на конфиг: нужна ссылка вида vless://… или JSON outbound sing-box</string>
+    <string name="subs_config_error_several">Конфигов здесь: %1$d, а нужен один. Несколько сразу добавляются кнопкой «Добавить» на вкладке «Конфиги»</string>
+    <string name="subs_config_error_scheme">Протокол «%1$s» не поддерживается</string>
+    <string name="subs_config_error_not_imported">Ссылки «%1$s://» не импортируются</string>
+    <string name="subs_config_error_encrypted">Ссылка зашифрована провайдером, прочитать её нельзя</string>
+    <string name="subs_config_error_malformed">Ошибка в конфиге %1$s</string>
+    <string name="subs_config_error_malformed_detail">Ошибка в конфиге %1$s: %2$s</string>
+    <string name="subs_detail_missing">нет поля «%1$s»</string>
+    <string name="subs_detail_not_base64">%1$s не в формате base64</string>
+    <string name="subs_detail_not_uuid">%1$s не похож на UUID</string>
+    <string name="subs_detail_bytes">%1$s должен быть длиной %2$d байт</string>
+    <string name="subs_detail_without">%1$s без поля «%2$s»</string>
+    <string name="subs_detail_bad_port">неверный порт</string>
+    <string name="subs_detail_bad_port_range">неверный диапазон портов</string>
+    <string name="subs_detail_ss_credentials">вместо «метод:пароль» что-то другое</string>
+    <string name="subs_detail_ipv6">неверно записан IPv6-адрес</string>
+    <string name="subs_detail_no_address">нет адреса интерфейса</string>
+    <string name="subs_detail_no_peer">нет сервера (peer)</string>
+    <string name="subs_detail_chain">неверная цепочка прокси</string>
+    <string name="subs_detail_payload">содержимое ссылки не читается</string>
+    <string name="subs_detail_unknown_type">неизвестный тип</string>
+    <string name="subs_detail_field_uuid">UUID</string>
+    <string name="subs_detail_field_password">пароль</string>
+    <string name="subs_detail_field_server">адрес сервера</string>
+    <string name="subs_detail_field_port">порт</string>
+    <string name="subs_detail_field_type">тип</string>
+    <string name="subs_detail_field_method">метод шифрования</string>
+    <string name="subs_detail_field_private_key">закрытый ключ</string>
+    <string name="subs_detail_field_public_key">публичный ключ</string>
+    <string name="subs_detail_field_peer_key">публичный ключ сервера</string>
+    <string name="subs_detail_field_psk">общий ключ (PSK)</string>
+    <string name="subs_detail_field_reality_key">публичный ключ REALITY</string>
+    <string name="subs_detail_field_ss2022_key">ключ Shadowsocks 2022</string>
+    <string name="subs_detail_field_awg_key">ключ защиты заголовков AmneziaWG</string>
+    <string name="subs_detail_field_settings">настройки</string>
+    <string name="subs_detail_field_reality">REALITY</string>
+    <string name="subs_detail_field_peer">сервер (peer)</string>
+    <string name="subs_detail_field_obfs">обфускация</string>
+    <string name="subs_detail_field_wireguard">WireGuard</string>
+
+    <!-- Lists, bulk import and selection on the configs tab -->
+    <string name="subs_list_delete_title">Удалить список?</string>
+    <string name="subs_list_delete_text">«%1$s» и его серверы будут удалены с устройства.</string>
+    <string name="subs_list_deleted">Список удалён</string>
+    <plurals name="subs_list_saved" tools:ignore="UnusedQuantity">
+        <item quantity="one">Сохранён список из %d сервера</item>
+        <item quantity="few">Сохранён список из %d серверов</item>
+        <item quantity="many">Сохранён список из %d серверов</item>
+        <item quantity="other">Сохранён список из %d сервера</item>
+    </plurals>
+    <string name="subs_list_saved_left_out">%1$s. Не прочитано: %2$d</string>
+    <string name="subs_configs_and_subscriptions">%1$s. %2$s</string>
+    <string name="subs_bulk_question">Конфигов здесь: %1$d. Сохранить их одним списком или каждый отдельной карточкой?</string>
+    <string name="subs_bulk_list">Сохранить одним списком</string>
+    <string name="subs_bulk_separate">Отдельными конфигами</string>
+    <string name="subs_select">Выбрать</string>
+    <string name="subs_select_cd">Выбрать конфиги для удаления</string>
+    <string name="subs_selected_count">Выбрано: %1$d</string>
+    <string name="subs_select_done_cd">Отменить выбор</string>
+    <string name="subs_delete_selected_cd">Удалить выбранные</string>
+    <string name="subs_delete_selected_title">Удалить выбранные?</string>
+    <plurals name="subs_delete_selected_text" tools:ignore="UnusedQuantity">
+        <item quantity="one">%d конфиг или список будет удалён с устройства.</item>
+        <item quantity="few">%d конфига или списка будут удалены с устройства.</item>
+        <item quantity="many">%d конфигов или списков будут удалены с устройства.</item>
+        <item quantity="other">%d конфига или списка будут удалены с устройства.</item>
+    </plurals>
+    <plurals name="subs_configs_deleted" tools:ignore="UnusedQuantity">
+        <item quantity="one">Удалён %d конфиг</item>
+        <item quantity="few">Удалено %d конфига</item>
+        <item quantity="many">Удалено %d конфигов</item>
+        <item quantity="other">Удалено %d конфига</item>
+    </plurals>
+    <string name="subs_kind_subscription_cd">Подписка</string>
+    <string name="subs_kind_config_cd">Конфиг</string>
+    <string name="subs_kind_list_cd">Список</string>
+    <string name="subs_form_warning_custom_id">Это не UUID. Подойдёт, только если на сервере задан ровно такой же ID: ядро превратит строку в UUID так же, как сервер</string>
+    <string name="subs_form_show_secret_cd">Показать</string>
+    <string name="subs_form_hide_secret_cd">Скрыть</string>
+    <string name="subs_form_error_packet_effective">Мин. размер больше максимального (пусто — %1$d и %2$d)</string>
+
+    <!-- Simple mode: something shared to the app -->
+    <string name="simple_import_subscription_title">Добавить подписку?</string>
+    <plurals name="simple_import_configs_title" tools:ignore="UnusedQuantity">
+        <item quantity="one">Добавить %d сервер?</item>
+        <item quantity="few">Добавить %d сервера?</item>
+        <item quantity="many">Добавить %d серверов?</item>
+        <item quantity="other">Добавить %d сервера?</item>
+    </plurals>
+    <string name="simple_import_text">Вы поделились с Desupon ссылкой. Если её прислал тот, кому вы доверяете, нажмите «Добавить».</string>
+    <string name="simple_import_nothing">В том, чем вы поделились, нет ни подписки, ни серверов.</string>
+    <string name="simple_import_add">Добавить</string>
+    <string name="simple_import_cancel">Не надо</string>
+    <string name="simple_import_working">Добавляю…</string>
+    <string name="simple_import_done">Готово! Теперь можно подключаться.</string>
+    <string name="simple_import_failed">Не получилось добавить. Попросите помощи у того, кто прислал ссылку.</string>
+    <string name="simple_import_ok">Хорошо</string>
+
+    <!-- Config form -->
+    <string name="subs_form_name">Название</string>
+    <string name="subs_form_name_hint">Пусто — адрес сервера</string>
+    <string name="subs_form_server">Сервер</string>
+    <string name="subs_form_port">Порт</string>
+    <string name="subs_form_uuid">UUID</string>
+    <string name="subs_form_password">Пароль</string>
+    <string name="subs_form_flow">Flow</string>
+    <string name="subs_form_vmess_security">Шифрование VMess</string>
+    <string name="subs_form_alter_id">Alter ID</string>
+    <string name="subs_form_method">Метод шифрования</string>
+    <string name="subs_form_plugin">Плагин</string>
+    <string name="subs_form_plugin_opts">Параметры плагина</string>
+    <string name="subs_form_security">Защита</string>
+    <string name="subs_form_sni">SNI</string>
+    <string name="subs_form_fingerprint">Отпечаток uTLS</string>
+    <string name="subs_form_alpn">ALPN</string>
+    <string name="subs_form_insecure">Не проверять сертификат</string>
+    <string name="subs_form_reality_key">Публичный ключ REALITY</string>
+    <string name="subs_form_reality_sid">Short ID</string>
+    <string name="subs_form_transport">Транспорт</string>
+    <string name="subs_form_path">Путь</string>
+    <string name="subs_form_host">Host</string>
+    <string name="subs_form_service_name">Имя gRPC-сервиса</string>
+    <string name="subs_form_xhttp_mode">Режим XHTTP</string>
+    <string name="subs_form_hop_ports">Порты для прыжков</string>
+    <string name="subs_form_hop_interval">Интервал прыжков</string>
+    <string name="subs_form_up">Отдача, Мбит/с</string>
+    <string name="subs_form_down">Загрузка, Мбит/с</string>
+    <string name="subs_form_obfs">Обфускация</string>
+    <string name="subs_form_obfs_password">Пароль обфускации</string>
+    <string name="subs_form_gecko_min">Мин. размер пакета</string>
+    <string name="subs_form_gecko_max">Макс. размер пакета</string>
+    <string name="subs_form_congestion">Управление перегрузкой</string>
+    <string name="subs_form_udp_relay">Передача UDP</string>
+    <string name="subs_form_zero_rtt">0-RTT рукопожатие</string>
+    <string name="subs_form_none">Нет</string>
+    <string name="subs_form_default">По умолчанию</string>
+    <string name="subs_form_tcp">Нет (TCP)</string>
+    <string name="subs_form_hint_sni">Имя сервера в TLS; пусто — адрес сервера</string>
+    <string name="subs_form_hint_alpn">Через запятую, например h2, http/1.1</string>
+    <string name="subs_form_hint_insecure">Опасно: соединение можно перехватить</string>
+    <string name="subs_form_hint_hop_ports">Например 20000-30000; пусто — без прыжков</string>
+    <string name="subs_form_hint_hop_interval">Например 30s; не меньше 5s</string>
+    <string name="subs_form_hint_short_id">Шестнадцатеричная строка до 16 символов, может быть пустой</string>
+    <string name="subs_form_hint_path">Начинается с /</string>
+    <string name="subs_form_hint_mbps">Пусто — подстраивается под сеть</string>
+    <string name="subs_form_hint_ss_password">Для методов 2022 — ключ в base64</string>
+    <string name="subs_form_error_required">Обязательное поле</string>
+    <string name="subs_form_error_server">Только адрес или IP, без http:// и пробелов</string>
+    <string name="subs_form_error_port">Порт от 1 до 65535</string>
+    <string name="subs_form_error_uuid">Нужен UUID вида xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</string>
+    <string name="subs_form_error_reality_key">Ключ REALITY — 32 байта в base64</string>
+    <string name="subs_form_error_short_id">Чётное число шестнадцатеричных символов, не больше 16</string>
+    <string name="subs_form_error_number">Нужно целое число больше нуля</string>
+    <string name="subs_form_error_alter_id">Нужно целое число, 0 или больше</string>
+    <string name="subs_form_error_packet_size">Число от 1 до %1$d</string>
+    <string name="subs_form_error_packet_range">Не меньше минимального размера</string>
+    <string name="subs_form_error_ports">Порты или диапазоны через запятую, например 20000-30000</string>
+    <string name="subs_form_error_hop_interval">Длительность вида 30s, не меньше 5 секунд</string>
+    <string name="subs_form_error_path">Путь начинается с /</string>
+    <string name="subs_form_error_ss2022_key">Нужен ключ base64 длиной %1$d байт</string>
+    <string name="subs_form_error_vision">Vision работает только с TLS или REALITY без транспорта (TCP)</string>
+    <string name="subs_form_fix">Исправьте отмеченные поля</string>
+    <string name="subs_form_unsupported">Ядро не запустит такой конфиг: %1$s</string>
 
     <!-- Sets -->
-    <string name="subs_sets_explain">Набор — какие подписки участвуют в автовыборе</string>
+    <string name="subs_sets_explain">Набор — какие подписки и конфиги участвуют в автовыборе</string>
     <string name="subs_sets_all">Все подписки</string>
     <string name="subs_sets_all_hint">все подписки, включая новые</string>
     <string name="subs_sets_active">активен</string>
@@ -151,8 +357,8 @@
     <string name="subs_sets_name">Название</string>
     <string name="subs_sets_name_blank">Введите название набора</string>
     <string name="subs_sets_name_taken">Набор с таким названием уже есть</string>
-    <string name="subs_sets_members">Подписки в наборе</string>
-    <string name="subs_sets_no_subscriptions">Подписок пока нет — добавьте их на вкладке «Подписки»</string>
+    <string name="subs_sets_members">Подписки и конфиги в наборе</string>
+    <string name="subs_sets_no_subscriptions">Подписок и конфигов пока нет — добавьте их на вкладках «Подписки» и «Конфиги»</string>
     <string name="subs_sets_delete_title">Удалить набор?</string>
     <string name="subs_sets_delete_text">Набор «%1$s» будет удалён, подписки останутся. Если он активен, автовыбор перейдёт на все подписки.</string>
     <string name="subs_sets_deleted">Набор удалён</string>

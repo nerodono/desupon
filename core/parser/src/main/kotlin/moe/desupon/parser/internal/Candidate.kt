@@ -16,7 +16,8 @@ internal sealed interface Entry {
     /** [skips] are members of a multi-node entry that produced no candidate. */
     data class Nodes(val candidates: List<Candidate>, val skips: List<Skip> = emptyList()) : Entry
 
-    data class Skip(val scheme: String?, val reason: moe.desupon.parser.SkipReason) : Entry
+    /** [detail] is a [MalformedException] message, which names a field and never its content. */
+    data class Skip(val scheme: String?, val reason: moe.desupon.parser.SkipReason, val detail: String? = null) : Entry
 }
 
 /** Runs one entry's parser; any failure becomes a counted skip instead of aborting the body. */
@@ -25,7 +26,10 @@ internal inline fun entry(scheme: String?, block: () -> List<Candidate>): Entry 
         Entry.Nodes(block())
     } catch (_: NotANodeException) {
         Entry.Skip(scheme, moe.desupon.parser.SkipReason.UNSUPPORTED_SCHEME)
+    } catch (e: MalformedException) {
+        Entry.Skip(scheme, moe.desupon.parser.SkipReason.MALFORMED, e.message)
     } catch (_: Exception) {
+        // Other exceptions may quote the input, which holds credentials.
         Entry.Skip(scheme, moe.desupon.parser.SkipReason.MALFORMED)
     }
 

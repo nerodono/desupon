@@ -58,7 +58,16 @@ internal object Migrations {
         }
     }
 
-    val ALL = arrayOf(V1_V2, V2_V3, V3_V4)
+    /** Row kinds: pasted local subscriptions become lists; configs keep their text in the row. */
+    val V4_V5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `subscription` ADD COLUMN `kind` TEXT NOT NULL DEFAULT 'SUBSCRIPTION'")
+            db.execSQL("ALTER TABLE `subscription` ADD COLUMN `source` TEXT")
+            db.execSQL("UPDATE `subscription` SET `kind` = 'LIST' WHERE `local` = 1")
+        }
+    }
+
+    val ALL = arrayOf(V1_V2, V2_V3, V3_V4, V4_V5)
 
     private fun splitJoinedUrls(db: SupportSQLiteDatabase) {
         val rows = ArrayList<Pair<Long, String>>()

@@ -103,6 +103,8 @@ internal object Normalizer {
             }
         }
 
+        if (type == "hysteria2") o.child("obfs")?.takeIf { it.str("type") == "gecko" }?.let { geckoRange(it, issues) }
+
         o.child("transport")?.let { t -> o = o.with("transport", fixTransport(t)) }
 
         o.child("tls")?.let { tls0 ->
@@ -136,6 +138,17 @@ internal object Normalizer {
         }
         return o
     }
+
+    /** Applies the core's gecko defaults (512/1200, 0 meaning unset); a range it refuses fails the whole box at start. */
+    private fun geckoRange(obfs: JsonObject, issues: Issues) {
+        val min = obfs.int("min_packet_size")?.takeIf { it != 0 } ?: GECKO_DEFAULT_MIN
+        val max = obfs.int("max_packet_size")?.takeIf { it != 0 } ?: GECKO_DEFAULT_MAX
+        if (min <= 0 || min > max || max > GECKO_MAX_PACKET) issues.unsupported("gecko packet size range")
+    }
+
+    private const val GECKO_DEFAULT_MIN = 512
+    private const val GECKO_DEFAULT_MAX = 1200
+    private const val GECKO_MAX_PACKET = 2048
 
     private fun fixTransport(t0: JsonObject): JsonObject {
         var t = t0

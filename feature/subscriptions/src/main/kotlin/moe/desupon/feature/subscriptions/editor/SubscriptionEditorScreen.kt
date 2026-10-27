@@ -1,13 +1,9 @@
 package moe.desupon.feature.subscriptions.editor
 
 import android.content.ActivityNotFoundException
-import android.content.ClipData
-import android.content.ClipDescription
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.PersistableBundle
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,6 +47,7 @@ import moe.desupon.feature.subscriptions.ui.ConfirmDialog
 import moe.desupon.feature.subscriptions.ui.DeleteDialog
 import moe.desupon.feature.subscriptions.ui.QrShareDialog
 import moe.desupon.feature.subscriptions.ui.SubsIcons
+import moe.desupon.feature.subscriptions.ui.copySensitive
 import moe.desupon.feature.subscriptions.ui.subscriptionTitle
 import moe.desupon.model.subscription.SubId
 
@@ -177,6 +174,7 @@ internal fun SubscriptionEditorScreen(
                 onDelete(id)
             },
             onDismiss = { confirmDelete = false },
+            list = i?.isLocal == true,
         )
     }
 
@@ -194,13 +192,6 @@ internal fun SubscriptionEditorScreen(
             onDismiss = { confirmDiscard = false },
         )
     }
-}
-
-/** Copies [text] flagged sensitive, so the system clipboard preview hides it. */
-private fun copySensitive(context: Context, text: String) {
-    val clip = ClipData.newPlainText("", text)
-    clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
-    context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(clip)
 }
 
 private fun openLink(context: Context, url: String) {

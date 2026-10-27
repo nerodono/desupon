@@ -107,6 +107,8 @@ class MigrationTest {
             assertEquals("https://c.example.com/s/tok", subs.getValue(2).url)
             assertNull(subs.getValue(2).mirrors)
             assertTrue(subs.getValue(3).local)
+            assertEquals("LIST", subs.getValue(3).kind)
+            assertEquals("SUBSCRIPTION", subs.getValue(1).kind)
             assertNull(subs.getValue(1).updateIntervalOverrideH)
             assertEquals(1, db.probeStatDao().forNetwork("wifi|k").size)
 
@@ -118,6 +120,34 @@ class MigrationTest {
             assertTrue(selection.setLocation(LocationChoice.Node(NodeId("n1"))))
             selection.setNodeEnabled(NodeId("n1"), false)
             assertEquals(LocationChoice.Any, selection.location.first(), "the only NL node is gone, so the pin widens to any")
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun version4MigratesPastedListsToTheListKind() = runTest {
+        val file = File(tmp.root, "desupon.db")
+        createSchema(file, 4).apply {
+            execSQL(
+                "INSERT INTO subscription (id, url, local, name, hwid, createdAt) VALUES " +
+                    "(1, 'https://a.example.com/s/tok', 0, NULL, 'h1', 1), (2, '', 1, 'Мой список', 'h2', 2)",
+            )
+            execSQL("INSERT INTO sub_chain (setId, subId, position) VALUES (0, 2, 0), (0, 1, 1)")
+            close()
+        }
+        val db = open(file)
+        try {
+            val subs = db.subscriptionDao().getAll().associateBy { it.id }
+            assertEquals("SUBSCRIPTION", subs.getValue(1).kind)
+            assertEquals("LIST", subs.getValue(2).kind)
+            assertEquals("Мой список", subs.getValue(2).name)
+            assertNull(subs.getValue(2).source)
+            val selection = SelectionRepository(db, NodeRepository(db.nodeDao()))
+            assertEquals(listOf(SubId(2), SubId(1)), selection.selection.first().chain)
+
+            val config = db.subscriptionDao().insert(SubscriptionEntity(url = "", local = true, hwid = "h3", createdAt = 3, kind = "CONFIG", source = "x"))
+            assertEquals("x", db.subscriptionDao().get(config)!!.source)
         } finally {
             db.close()
         }

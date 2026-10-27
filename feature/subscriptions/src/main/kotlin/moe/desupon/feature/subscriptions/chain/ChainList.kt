@@ -83,6 +83,30 @@ internal object ChainList {
         return rows.toMutableList().apply { add(to, removeAt(from)) }
     }
 
+    /**
+     * [op], made on the part of [full] that [visible] shows, as an edit of [full]; null when it changes nothing.
+     * Rows that are not visible keep their places; a moved row lands right before its new visible successor.
+     */
+    fun toFull(op: ChainOp, full: List<SubId>, visible: Set<SubId>): ChainOp? {
+        val view = full.filter { it in visible }
+        val after = op.applyTo(view)?.takeIf { it != view } ?: return null
+        if (op is ChainOp.Remove) return op
+        val sub = op.sub
+        val base = full - sub
+        val at = after.indexOf(sub)
+        val next = after.getOrNull(at + 1)
+        val prev = after.getOrNull(at - 1)
+        val pos = when {
+            next != null -> base.indexOf(next)
+            prev != null -> base.indexOf(prev) + 1
+            else -> base.size
+        }
+        return when (op) {
+            is ChainOp.Add -> ChainOp.Add(sub, pos)
+            else -> ChainOp.Move(sub, pos).takeIf { base.toMutableList().apply { add(pos, sub) } != full }
+        }
+    }
+
     /** The edit that turns [before] into the chain of [after], where only [sub] was dragged; null when its place in the chain is unchanged. */
     fun dropOp(before: List<SubId>, after: List<ChainRow>, sub: SubId): ChainOp? {
         val chain = chainOf(after)

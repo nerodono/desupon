@@ -38,6 +38,8 @@ data class SkippedEntry(
     val index: Int,
     val scheme: String?,
     val reason: SkipReason,
+    /** For [SkipReason.MALFORMED]: what was wrong, naming a field and never its value; null when unknown. */
+    val detail: String? = null,
 )
 
 /** Subscription metadata from HTTP headers, falling back to `#key: value` directives in the body. */

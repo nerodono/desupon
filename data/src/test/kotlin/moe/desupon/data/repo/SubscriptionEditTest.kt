@@ -11,6 +11,7 @@ import moe.desupon.data.fetch.BodyCache
 import moe.desupon.data.fetch.DeviceInfo
 import moe.desupon.data.fetch.FetchError
 import moe.desupon.data.fetch.FetchTrigger
+import moe.desupon.data.db.SubscriptionEntity
 import moe.desupon.data.fetch.SubscriptionFetcher
 import moe.desupon.data.inMemoryDb
 import moe.desupon.model.selection.LocationChoice
@@ -148,10 +149,19 @@ class SubscriptionEditTest {
         assertEquals(UpdateResult.NotDue, repo.update(id, FetchTrigger.AUTO))
     }
 
+    /** A pasted list as earlier versions saved it; new pastes become configs. */
+    private suspend fun legacyList(text: String): SubId {
+        val id = SubId(db.subscriptionDao().insert(SubscriptionEntity(url = "", local = true, kind = "LIST", hwid = "h", createdAt = 1)))
+        cache.write(id, text.toByteArray())
+        assertIs<UpdateResult.Updated>(repo.reparseCached(id))
+        return id
+    }
+
     @Test
     fun localTextIsEditableAndReparsedOnSave() = runTest {
-        val local = assertIs<AddResult.Imported>(repo.addFromText(Links.body("X", "Y"))).id
+        val local = legacyList(Links.body("X", "Y"))
         assertEquals(Links.body("X", "Y"), repo.localText(local))
+        assertEquals(Links.body("X", "Y"), repo.configSource(local))
         assertNull(repo.shareUrl(local))
         assertTrue(repo.details(local).first()!!.urls.isEmpty())
 

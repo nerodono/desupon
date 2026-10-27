@@ -41,7 +41,7 @@ dependencies {
     api(project(":core:model"))
     api(project(":core:brain"))
     api(project(":core:config"))
-    implementation(project(":core:parser"))
+    api(project(":core:parser"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.room.runtime)

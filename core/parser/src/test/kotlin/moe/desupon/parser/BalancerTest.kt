@@ -54,7 +54,7 @@ class BalancerTest {
         val c = byName.getValue("🇳🇱 NL burst · lb-c")
         assertAt("shadowsocks", c.chain().single(), "type")
         assertEquals(1, parsed.duplicates)
-        assertEquals(listOf(SkippedEntry(1, "vless", SkipReason.MALFORMED)), parsed.skipped)
+        assertEquals(listOf(SkippedEntry(1, "vless", SkipReason.MALFORMED, "REALITY public key is not 32 bytes")), parsed.skipped)
         assertEquals(emptyMap(), parsed.unsupportedReasons)
     }
 
