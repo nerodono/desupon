@@ -46,7 +46,8 @@ const (
 	maxThroughputBytes      = 1 << 20
 )
 
-// ProbeRequest: NodesJSON is a TUN-less sing-box config; DNSCSV, Interface* and IPv4Only describe the underlying network.
+// ProbeRequest: NodesJSON is a TUN-less sing-box config; DNSCSV and Interface* describe the underlying network.
+// IPv4Only skips AAAA lookups: the network has no IPv6 or the user turned it off.
 // TimeoutsJSON optionally maps a tag to its own timeout in milliseconds, overriding TimeoutMs.
 type ProbeRequest struct {
 	NodesJSON      string
@@ -213,7 +214,7 @@ func isChainHop(tag string, tags map[string]bool) bool {
 const typeFreeTurn = "freeturn"
 
 // probeConfig rejects anything that listens, writes files or touches process-wide state, and pins DNS to the underlying network.
-// ipv4Only drops AAAA lookups, which a network without IPv6 can never use.
+// ipv4Only drops AAAA lookups: the network has no IPv6 or the user turned it off.
 func probeConfig(nodesJSON, dnsCSV string, ipv4Only bool) ([]byte, error) {
 	var config map[string]any
 	if err := json.Unmarshal([]byte(nodesJSON), &config); err != nil {

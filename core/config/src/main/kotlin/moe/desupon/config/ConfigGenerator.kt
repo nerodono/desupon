@@ -72,12 +72,13 @@ class ConfigGenerator {
      */
     fun placeholderConfig(lanBypass: Boolean = false, mtu: Int = DEFAULT_MTU, ipv4Only: Boolean = false): Secret {
         if (mtu !in MIN_MTU..MAX_MTU) throw ConfigException("mtu must be within $MIN_MTU..$MAX_MTU")
+        val strategy = if (ipv4Only) DnsStrategy.IPV4_ONLY else DnsStrategy.PREFER_IPV4
         val config = ConfigDto(
             log = LogDto(MAIN_LOG_LEVEL),
-            dns = DnsDto(servers = listOf(DnsServerDto(type = "local", tag = DNS_LOCAL))),
+            dns = DnsDto(servers = listOf(DnsServerDto(type = "local", tag = DNS_LOCAL)), strategy = strategyName(strategy)),
             inbounds = listOf(tun(mtu, lanBypass, ipv4Only)),
             outbounds = listOf(encode(BlockDto.serializer(), BlockDto(tag = TAG_BLOCK))),
-            route = RouteDto(final = TAG_BLOCK, defaultDomainResolver = resolver(DnsStrategy.PREFER_IPV4)),
+            route = RouteDto(final = TAG_BLOCK, defaultDomainResolver = resolver(strategy)),
             experimental = ExperimentalDto(CacheFileDto()),
         )
         val json = configJson.encodeToString(ConfigDto.serializer(), config)
@@ -88,16 +89,16 @@ class ConfigGenerator {
 
     fun validate(json: String, kind: ConfigKind? = null): List<String> = ConfigValidator.validate(json, kind)
 
-    /** Android blocks IPv6 for tunnelled apps when the TUN has no IPv6 address or route, which is how [ipv4Only] keeps it out. */
-    private fun tun(mtu: Int, lanBypass: Boolean, ipv4Only: Boolean): TunInboundDto {
-        fun List<String>.families() = if (ipv4Only) filterNot { ':' in it } else this
-        return TunInboundDto(
-            tag = TAG_TUN,
-            address = TUN_ADDRESS.families(),
-            mtu = mtu,
-            routeExcludeAddress = LAN_RANGES.takeIf { lanBypass }?.families(),
-        )
-    }
+    /**
+     * Without an IPv6 address Android blocks IPv6 for tunnelled apps, which is how [ipv4Only] keeps it out;
+     * IPv6 LAN excludes stay, since throw routes never make Android allow a family.
+     */
+    private fun tun(mtu: Int, lanBypass: Boolean, ipv4Only: Boolean) = TunInboundDto(
+        tag = TAG_TUN,
+        address = if (ipv4Only) TUN_ADDRESS.filterNot { ':' in it } else TUN_ADDRESS,
+        mtu = mtu,
+        routeExcludeAddress = LAN_RANGES.takeIf { lanBypass },
+    )
 
     private class BuiltNodes(
         val outbounds: List<JsonObject>,

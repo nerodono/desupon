@@ -68,12 +68,14 @@ class TunSpecTest {
     }
 
     @Test
-    fun withoutAnIpv6AddressNothingOfIpv6ReachesTheBuilder() {
-        val request = request(exclude4 = listOf(Prefix("192.168.0.0", 16)), range4 = listOf(Prefix("0.0.0.0", 0))).copy(
+    fun withoutAnIpv6AddressNoIpv6ExceptExcludesReachesTheBuilder() {
+        val lan4 = Prefix("192.168.0.0", 16)
+        val lan6 = Prefix("fc00::", 7)
+        val request = request(exclude4 = listOf(lan4), range4 = listOf(Prefix("0.0.0.0", 0))).copy(
             inet6Address = emptyList(),
             dnsServers = listOf("10.13.0.2", "fdfe:dcba:9876::2"),
             inet6RouteAddress = listOf(Prefix("2001:db8::", 32)),
-            inet6RouteExcludeAddress = listOf(Prefix("fc00::", 7)),
+            inet6RouteExcludeAddress = listOf(lan6),
             inet6RouteRange = listOf(Prefix("::", 0)),
         )
         for (sdk in listOf(30, 34)) {
@@ -81,8 +83,9 @@ class TunSpecTest {
             assertEquals(listOf(v4), spec.addresses)
             assertEquals(listOf("10.13.0.2"), spec.dnsServers)
             assertEquals(listOf(Prefix("0.0.0.0", 0)), spec.routes)
-            assertTrue((spec.addresses + spec.routes + spec.excludeRoutes).none { it.isIpv6 }, "sdk $sdk")
+            assertTrue((spec.addresses + spec.routes).none { it.isIpv6 }, "sdk $sdk")
         }
+        assertEquals(listOf(lan4, lan6), TunSpec.of(request, sdk = 34).excludeRoutes)
     }
 
     @Test

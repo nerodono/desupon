@@ -87,9 +87,9 @@ class CorePlatformTest {
         }
     }
 
-    /** What the core asks for under IPv4 only: an IPv4 address, its DNS next to it and IPv4 LAN excludes. */
+    /** What the core asks for under IPv4 only: an IPv4 address, its DNS next to it and LAN excludes of both families. */
     @Test
-    fun ipv4OnlyTunHandsTheBuilderNoIpv6AndNeverAllowsAFamily() {
+    fun ipv4OnlyTunHandsTheBuilderNoIpv6ExceptExcludesAndNeverAllowsAFamily() {
         val request = TunRequest(
             mtu = 1500,
             autoRoute = true,
@@ -100,7 +100,7 @@ class CorePlatformTest {
             inet4RouteAddress = emptyList(),
             inet6RouteAddress = emptyList(),
             inet4RouteExcludeAddress = listOf(Prefix("10.0.0.0", 8), Prefix("192.168.0.0", 16)),
-            inet6RouteExcludeAddress = emptyList(),
+            inet6RouteExcludeAddress = listOf(Prefix("fc00::", 7), Prefix("fe80::", 10)),
             inet4RouteRange = emptyList(),
             inet6RouteRange = emptyList(),
             includePackage = emptyList(),
@@ -115,6 +115,8 @@ class CorePlatformTest {
                 "route 0.0.0.0/0",
                 "exclude 10.0.0.0/8",
                 "exclude 192.168.0.0/16",
+                "exclude fc00:0:0:0:0:0:0:0/7",
+                "exclude fe80:0:0:0:0:0:0:0/10",
                 "disallow org.example.bank",
             ),
             vpn.calls,

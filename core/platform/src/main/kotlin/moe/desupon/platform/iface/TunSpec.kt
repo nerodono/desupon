@@ -38,7 +38,8 @@ data class TunSpec(
     companion object {
         /**
          * Routes, DNS and per-app lists only apply with auto_route, as the core expects.
-         * A family without an address gets no route or DNS server either, so Android blocks that family for tunnelled apps.
+         * A family without an address gets no route or DNS server, so Android blocks it for tunnelled apps;
+         * its excludes stay, as Android allows a family for addresses, unicast routes and DNS servers, never for throw routes.
          */
         fun of(request: TunRequest, sdk: Int = Build.VERSION.SDK_INT): TunSpec {
             require(request.mtu > 0) { "tun: mtu must be set explicitly" }
@@ -55,7 +56,7 @@ data class TunSpec(
             if (sdk >= Build.VERSION_CODES.TIRAMISU) {
                 routes = request.inet4RouteAddress.ifEmpty { listOf(Prefix("0.0.0.0", 0)) }.ifHas(v4) +
                     request.inet6RouteAddress.ifEmpty { listOf(Prefix("::", 0)) }.ifHas(v6)
-                excludes = request.inet4RouteExcludeAddress.ifHas(v4) + request.inet6RouteExcludeAddress.ifHas(v6)
+                excludes = request.inet4RouteExcludeAddress + request.inet6RouteExcludeAddress
             } else {
                 routes = request.inet4RouteRange.ifHas(v4) + request.inet6RouteRange.ifHas(v6)
                 excludes = emptyList()
