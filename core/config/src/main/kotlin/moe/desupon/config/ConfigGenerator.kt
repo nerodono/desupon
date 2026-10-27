@@ -158,6 +158,13 @@ class ConfigGenerator {
         const val MIN_MTU = 1280
         const val MAX_MTU = 1500
 
+        /** sing-box types of the outbound [node] loads as and of every hop it dials through; empty when its JSON is unreadable. */
+        fun dialedTypes(node: Node): Set<String> {
+            val source = parseObject(node.outboundJson.raw()) ?: return emptySet()
+            val hops = source.array(Node.CHAIN_KEY).mapNotNull { (it as? JsonObject)?.string("type") }
+            return setOfNotNull(source.string("type")) + hops
+        }
+
         private const val MAIN_LOG_LEVEL = "warn"
         private const val PROBE_LOG_LEVEL = "error"
 

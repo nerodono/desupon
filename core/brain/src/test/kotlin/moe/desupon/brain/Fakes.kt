@@ -105,6 +105,58 @@ object Nodes {
         )
     }
 
+    fun tuic(name: String, country: String? = "NL"): Node = quic(name, country, Protocol.TUIC, tuicJson(nextHost()))
+
+    fun hy2(name: String, country: String? = "NL"): Node {
+        val host = nextHost()
+        return quic(
+            name, country, Protocol.HYSTERIA2,
+            """{"type":"hysteria2","server":"$host","server_port":8443,"password":"pw-$name","tls":{"enabled":true,"server_name":"hy2.test","alpn":["h3"]}}""",
+        )
+    }
+
+    /** A Shadowsocks exit dialed through a TUIC hop. */
+    fun ssViaTuic(name: String, country: String? = "NL"): Node {
+        val host = nextHost()
+        val key = NodeKey(Protocol.SHADOWSOCKS, host, 8388, credential = Secret("cred-$name"), via = listOf("tuic-hop-$name"))
+        return Node(
+            id = key.id,
+            subs = emptySet(),
+            protocol = Protocol.SHADOWSOCKS,
+            displayName = name,
+            country = country,
+            capability = Capability.SUPPORTED,
+            outboundJson = Secret(
+                """{"type":"shadowsocks","server":"$host","server_port":8388,"method":"2022-blake3-aes-128-gcm","password":"WlpaWlpaWlpaWlpaWlpaWg==","chain":[${tuicJson(nextHost())}]}""",
+            ),
+            isEndpoint = false,
+            udpOnly = false,
+            labels = emptySet(),
+        )
+    }
+
+    private fun quic(name: String, country: String?, protocol: Protocol, json: String): Node {
+        val host = Regex(""""server":"([^"]+)"""").find(json)!!.groupValues[1]
+        val key = NodeKey(protocol, host, 443, credential = Secret("cred-$name"))
+        return Node(
+            id = key.id,
+            subs = emptySet(),
+            protocol = protocol,
+            displayName = name,
+            country = country,
+            capability = Capability.SUPPORTED,
+            outboundJson = Secret(json),
+            isEndpoint = false,
+            udpOnly = true,
+            labels = emptySet(),
+        )
+    }
+
+    private fun tuicJson(host: String) =
+        """{"type":"tuic","server":"$host","server_port":443,"uuid":"00000000-0000-4000-8000-00000000c0de","password":"pw","congestion_control":"bbr","tls":{"enabled":true,"server_name":"tuic.test","alpn":["h3"]}}"""
+
+    private fun nextHost() = "198.51.100.${next++}"
+
     private const val WG_KEY = "WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlo="
 }
 

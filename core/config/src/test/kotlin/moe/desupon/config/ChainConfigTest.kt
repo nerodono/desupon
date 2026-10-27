@@ -40,6 +40,16 @@ class ChainConfigTest {
     )
 
     @Test
+    fun `dialed types list the node and every hop`() {
+        assertEquals(setOf("tuic"), ConfigGenerator.dialedTypes(Fixtures.tuic))
+        assertEquals(
+            setOf("vless", "hysteria", "shadowsocks"),
+            ConfigGenerator.dialedTypes(chained(Fixtures.vlessReality, Fixtures.hysteria, Fixtures.shadowsocks)),
+        )
+        assertEquals(emptySet(), ConfigGenerator.dialedTypes(Fixtures.tuic.copy(outboundJson = Secret("{"))))
+    }
+
+    @Test
     fun `hops are emitted once per node, linked by detour, outside the groups`() {
         val node = chained(Fixtures.vlessReality, Fixtures.trojanGrpc, Fixtures.shadowsocks)
         val cfg = gen.mainConfig(MainConfigRequest(selection = mapOf(Tier.DIRECT to listOf(node, node, Fixtures.socks)), mode = NetworkMode.OPEN))

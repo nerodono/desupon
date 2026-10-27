@@ -148,9 +148,17 @@ class SelectorBrain(
         screenOn.value = on
     }
 
-    /** The device slept long enough for tunnel state to die meanwhile: the core starts over and the current node is checked. */
+    /**
+     * The device slept long enough for server-side UDP session state to die meanwhile: loaded outbounds that keep such state
+     * start over and the current node is checked.
+     */
     fun onWake() {
         sessionEvents?.trySend(Event.Wake)
+    }
+
+    /** The system stopped blocking the app's network, which any connection may have lost packets to: the core starts over. */
+    fun onNetworkUnblocked() {
+        sessionEvents?.trySend(Event.Unblocked)
     }
 
     /** Installed apps changed what the per-app split resolves to; the running config is reloaded on the current node. */
@@ -230,6 +238,8 @@ class SelectorBrain(
         data object CheckNow : Event
 
         data object Wake : Event
+
+        data object Unblocked : Event
 
         data object AppsChanged : Event
 
@@ -556,7 +566,8 @@ class SelectorBrain(
             is Event.Split -> onSplit(event.split)
             is Event.Selection -> onSelection(event.selection)
             Event.CheckNow -> if (offline) Unit else check()
-            Event.Wake -> onWake()
+            Event.Wake -> startOver(::resetSleepers)
+            Event.Unblocked -> startOver(::resetNetwork)
             Event.AppsChanged -> loaded?.let { reapply(it.plan, split) } ?: Unit
             is Event.ProbeSet -> startSetProbe(event.done, event.full)
             is Event.Batch -> if (event.key == net.key) record(event.results) else Unit
@@ -585,17 +596,16 @@ class SelectorBrain(
         }
 
         /**
-         * Server-side QUIC idle timeouts and NAT mappings ran on while the device slept: the core starts over, then the current
-         * node is checked at once, as on [resume]. Failures of probes through the core in the grace window that follows count
-         * for nothing durable.
+         * Tunnel state may have died meanwhile: [reset] starts it over, then the current node is checked at once, as on [resume].
+         * Failures of probes through the core in the grace window that follows count for nothing durable.
          */
-        private suspend fun onWake() {
+        private suspend fun startOver(reset: suspend () -> Unit) {
             failures = 0
             upward = null
             // Unstable keeps its exit check.
             if (_state.value !is ConnState.Unstable) recheckAt = null
             graceUntilMs = clock.elapsedMs() + config.wakeGraceMs
-            resetNetwork()
+            reset()
             if (offline) return
             val now = clock.elapsedMs()
             retryAt?.let { retryAt = now }
@@ -615,6 +625,14 @@ class SelectorBrain(
         private suspend fun resetNetwork() {
             freshSinceMs = clock.elapsedMs()
             guard(Unit) { libbox.resetNetwork() }
+        }
+
+        /** Only loaded nodes dialing through [SLEEP_FRAGILE] transports, whose clients cannot tell their server forgot them. */
+        private suspend fun resetSleepers() {
+            val l = loaded ?: return
+            for (node in l.plan.nodes) {
+                if (node.id.tag in l.tags && ConfigGenerator.dialedTypes(node).any { it in SLEEP_FRAGILE }) resetOutbound(node.id.tag)
+            }
         }
 
         /** A refused reset leaves the session as it is. */
@@ -1220,6 +1238,12 @@ class SelectorBrain(
     private companion object {
         val TIERS = setOf(Tier.DIRECT, Tier.RU)
         val WG_FAMILY = setOf(Protocol.WIREGUARD, Protocol.AMNEZIAWG)
+
+        /**
+         * QUIC transports whose server drops the session after its idle timeout while the device sleeps, unseen by a client on
+         * a clock that stopped; hysteria2 is left out because its patched client checks that itself on every send.
+         */
+        val SLEEP_FRAGILE = setOf("tuic", "juicity", "hysteria")
 
         fun Node.isWireGuardFamily(): Boolean = isEndpoint || protocol in WG_FAMILY
 

@@ -181,7 +181,7 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
         autoRetry?.cancelWait()
         if (autoRetry == null) {
             val simpleMode = preferences.simpleMode.stateIn<Boolean?>(scope, SharingStarted.Eagerly, null)
-            autoRetry = AutoRetry(scope, simpleMode, observer.current.map { it?.key }, wakes)
+            autoRetry = AutoRetry(scope, simpleMode, observer.current.map { it?.key }, merge(wakes, observer.unblocked))
         }
         stopRequested = false
         holder.starting()
@@ -212,12 +212,7 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
                         .distinctUntilChanged()
                         .collect(b::onEvent)
                 }
-                launch {
-                    wakes.collect { slept ->
-                        runtime.log(CoreLogLevel.INFO, "woke after ${slept / 1_000} s asleep, resetting the network")
-                        b.onWake()
-                    }
-                }
+                forwardRecovery(wakes, observer.unblocked, { runtime.log(CoreLogLevel.INFO, it) }, b::onWake, b::onNetworkUnblocked)
                 registerReceivers(b)
                 b.connect()
                 awaitCancellation()
@@ -363,7 +358,7 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
             ContextCompat.registerReceiver(this, it, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         }
         val detector = WakeDetector(interactive = { screenOn.value })
-        wakeWatch = scope.launch { detector.wakes(merge(wakeChecks, observer.unblocked)).collect(wakes::emit) }
+        wakeWatch = scope.launch { detector.wakes(wakeChecks).collect(wakes::emit) }
     }
 
     private fun stopWakeWatch() {
@@ -436,6 +431,28 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
         /** A fresh install, not an update of an existing package. */
         internal fun addedPackage(intent: Intent): String? =
             intent.data?.schemeSpecificPart?.takeIf { !intent.getBooleanExtra(Intent.EXTRA_REPLACING, false) }
+
+        /** A long sleep resets only the sleep-fragile outbounds; an unblocked network, which any connection may have lost packets to, the whole core. */
+        internal fun CoroutineScope.forwardRecovery(
+            wakes: Flow<Long>,
+            unblocked: Flow<Unit>,
+            log: (String) -> Unit,
+            onWake: () -> Unit,
+            onUnblocked: () -> Unit,
+        ) {
+            launch {
+                wakes.collect { slept ->
+                    log("woke after ${slept / 1_000} s asleep, resetting QUIC sessions")
+                    onWake()
+                }
+            }
+            launch {
+                unblocked.collect {
+                    log("network unblocked, resetting the network")
+                    onUnblocked()
+                }
+            }
+        }
 
         private fun foregroundType(): Int =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED else 0

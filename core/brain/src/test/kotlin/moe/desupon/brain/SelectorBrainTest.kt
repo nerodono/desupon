@@ -931,7 +931,32 @@ class SelectorBrainTest {
     }
 
     @Test
-    fun `wake resets the core and checks the current node at once`() = runTest {
+    fun `wake resets only loaded outbounds dialing through sleep-fragile QUIC, then checks the current node at once`() = runTest {
+        val t1 = Nodes.tuic("t1")
+        val h1 = Nodes.hy2("h1")
+        val s1 = Nodes.ss("s1")
+        val c1 = Nodes.ssViaTuic("c1")
+        val w1 = Nodes.wg("w1")
+        val h = Harness(this, listOf(t1, h1, s1, c1, w1))
+        h.alive(t1, h1, s1, c1, w1)
+        h.rtt(t1 to 10, h1 to 20, s1 to 30, c1 to 40, w1 to 50)
+        h.connectOn(WIFI)
+        advance(600_000)
+        val config = h.libbox.reloads.last().json
+        for (node in listOf(t1, h1, s1, c1, w1)) assertTrue("\"tag\":\"${node.tag}\"" in config, "${node.displayName} not loaded")
+        h.journal.entries.clear()
+
+        h.brain.onWake()
+        runCurrent()
+
+        assertEquals(0, h.libbox.resets, "a wake never resets the whole core")
+        assertEquals(setOf(t1.tag, c1.tag), h.libbox.outboundResets.toSet())
+        assertEquals("probeLive:${t1.tag}", h.journal.entries.last())
+        h.assertOn(t1)
+    }
+
+    @Test
+    fun `an unblocked network resets the whole core and checks the current node at once`() = runTest {
         val d1 = Nodes.ss("d1")
         val h = Harness(this, listOf(d1))
         h.alive(d1)
@@ -939,7 +964,7 @@ class SelectorBrainTest {
         advance(600_000)
         h.journal.entries.clear()
 
-        h.brain.onWake()
+        h.brain.onNetworkUnblocked()
         runCurrent()
 
         assertEquals(listOf("reset", "probeLive:${d1.tag}"), h.journal.entries)
@@ -963,7 +988,7 @@ class SelectorBrainTest {
     }
 
     @Test
-    fun `a failure right after wake is confirmed without a second reset and leaves no mark once confirmed good`() = runTest {
+    fun `a failure right after wake is confirmed without a reset and leaves no mark once confirmed good`() = runTest {
         val d1 = Nodes.ss("d1")
         val d2 = Nodes.ss("d2")
         val h = Harness(this, listOf(d1, d2))
@@ -980,7 +1005,7 @@ class SelectorBrainTest {
         advance(3_000)
 
         h.assertOn(d1)
-        assertEquals(1, h.libbox.resets)
+        assertEquals(0, h.libbox.resets)
         assertEquals(emptyList(), h.libbox.outboundResets)
         val after = h.stats.map.getValue(WIFI to d1.id)
         assertEquals(before.fail, after.fail)
@@ -989,7 +1014,7 @@ class SelectorBrainTest {
 
     @Test
     fun `failover inside the wake grace window keeps the last good node until the new one passes after it`() = runTest {
-        val d1 = Nodes.ss("d1")
+        val d1 = Nodes.tuic("d1")
         val d2 = Nodes.ss("d2")
         val h = Harness(this, listOf(d1, d2))
         h.alive(d1, d2)
@@ -1005,7 +1030,7 @@ class SelectorBrainTest {
         advance(3_000)
 
         h.assertOn(d2)
-        assertEquals(emptyList(), h.libbox.outboundResets, "the wake reset counts as the node's")
+        assertEquals(listOf(d1.tag), h.libbox.outboundResets, "the wake reset counts as the node's")
         assertEquals(d1.id, h.memory.map.getValue(WIFI).lastGood)
         assertEquals(failsBefore, h.stats.map.getValue(WIFI to d1.id).fail)
 

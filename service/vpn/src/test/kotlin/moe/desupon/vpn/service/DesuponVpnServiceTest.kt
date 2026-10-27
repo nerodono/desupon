@@ -8,6 +8,10 @@ import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.service.quicksettings.TileService
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import moe.desupon.brain.port.ConnState
 import moe.desupon.vpn.lifecycle.VpnFailReason
 import moe.desupon.vpn.lifecycle.VpnStateHolder
@@ -103,5 +107,25 @@ class DesuponVpnServiceTest {
         assertNull(DesuponVpnService.enterForeground {})
         assertEquals(VpnFailReason.NOT_PREPARED, DesuponVpnService.enterForeground { throw SecurityException("systemExempted") })
         assertEquals(VpnFailReason.START_BLOCKED, DesuponVpnService.enterForeground { throw IllegalStateException("background") })
+    }
+
+    @Test
+    fun `a wake resets the sleep-fragile outbounds, an unblocked network the whole core`() = runTest {
+        val wakes = MutableSharedFlow<Long>()
+        val unblocked = MutableSharedFlow<Unit>()
+        val calls = mutableListOf<String>()
+        val forward = backgroundScope.launch {
+            with(DesuponVpnService) { forwardRecovery(wakes, unblocked, { calls += "log" }, { calls += "wake" }, { calls += "unblocked" }) }
+        }
+        runCurrent()
+
+        wakes.emit(25_000)
+        runCurrent()
+        assertEquals(listOf("log", "wake"), calls)
+
+        unblocked.emit(Unit)
+        runCurrent()
+        assertEquals(listOf("log", "wake", "log", "unblocked"), calls)
+        forward.cancel()
     }
 }
