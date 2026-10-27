@@ -42,4 +42,7 @@ func TestControlWithoutService(t *testing.T) {
 	if err := CloseConnections(nil); err == nil {
 		t.Fatal("CloseConnections without a command server succeeded")
 	}
+	if err := ResetNetwork(nil); err == nil {
+		t.Fatal("ResetNetwork without a command server succeeded")
+	}
 }

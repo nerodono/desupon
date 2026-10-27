@@ -32,6 +32,18 @@ func CloseConnections(server *libbox.CommandServer) error {
 	})
 }
 
+// ResetNetwork drops every connection and resets outbound clients, DNS transports and the TUN NAT, as a network change would.
+func ResetNetwork(server *libbox.CommandServer) error {
+	return onGoroutine(func() error {
+		b, err := runningBox(server)
+		if err != nil {
+			return maskErr(err)
+		}
+		b.Network().ResetNetwork(context.Background())
+		return nil
+	})
+}
+
 func runningBox(server *libbox.CommandServer) (*box.Box, error) {
 	if server == nil || server.StartedService == nil {
 		return nil, E.New("core: no command server")
