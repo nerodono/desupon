@@ -1,9 +1,9 @@
 diff --git a/hysteria2/answer.go b/hysteria2/answer.go
 new file mode 100644
-index 0000000..d39ef7d
+index 0000000..b66257b
 --- /dev/null
 +++ b/hysteria2/answer.go
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,149 @@
 +package hysteria2
 +
 +import (
@@ -20,11 +20,19 @@ index 0000000..d39ef7d
 +// minAnswerTimeout keeps short-RTT paths from tripping on a brief stall, such as a radio switching cells.
 +const minAnswerTimeout = 5 * time.Second
 +
-+// answerPTOs covers quic-go's probes at 1, 3 and 7 PTOs after a lost send, plus the round trip of the reply to the last one.
-+const answerPTOs = 8
++// minAnswerHardTimeout lets a short outage, a handover or a tunnel, pass before the flows on a connection are cut;
++// it stays at half the 30 s QUIC idle timeout, which would otherwise be the only limit.
++const minAnswerHardTimeout = 15 * time.Second
 +
-+// maxAckDelay is quic-go's default max_ack_delay, which a live peer may wait before acknowledging.
++// answerPTOs covers quic-go's probes at 1, 3 and 7 PTOs after a lost send and the reply to the last one,
++// with room for a peer max_ack_delay above maxAckDelay.
++const answerPTOs = 10
++
++// maxAckDelay assumes quic-go's default for the peer's max_ack_delay, which ConnectionStats does not report.
 +const maxAckDelay = 25 * time.Millisecond
++
++// answerPoll is how often a wait checks whether its send has left yet.
++const answerPoll = time.Second
 +
 +// answerTimeoutFor is how long a live peer may take to acknowledge anything sent to it, from quic-go's own PTO estimate.
 +func answerTimeoutFor(stats quic.ConnectionStats, floor time.Duration) time.Duration {
@@ -32,46 +40,66 @@ index 0000000..d39ef7d
 +	return max(floor, answerPTOs*pto)
 +}
 +
-+// answerWatch closes a connection once data sent on it went unanswered, not even acknowledged, for longer than a live
-+// server could take; quic-go's own idle timer would wait out the whole idle timeout.
-+type answerWatch struct {
-+	receive *receiveTracker
-+	timeout func() time.Duration
-+	expire  func(error)
-+	// waiting is the monotonic time of the first send since the server was last heard from; the episode is open while it
-+	// is past receive.lastMono.
-+	waiting atomic.Int64
-+	armed   atomic.Bool
-+	access  sync.Mutex
-+	timer   *time.Timer
-+	closed  bool
++func answerHardTimeoutFor(soft time.Duration, floor time.Duration) time.Duration {
++	return max(floor, 2*soft)
 +}
 +
-+func newAnswerWatch(receive *receiveTracker, timeout func() time.Duration, expire func(error)) *answerWatch {
-+	return &answerWatch{receive: receive, timeout: timeout, expire: expire}
++// answerWatch follows data sent on a connection until the server is heard from again: past the soft timeout the
++// connection takes no new flows, past the hard one it is closed; quic-go's own idle timer would wait out the idle timeout.
++type answerWatch struct {
++	receive     *receiveTracker
++	timeouts    func() (soft, hard time.Duration)
++	packetsSent func() uint64
++	expire      func(error)
++	poll        time.Duration
++	// waiting is the monotonic time of the first send since the server was last heard from; the wait is open while
++	// it is past receive.lastMono.
++	waiting atomic.Int64
++	// marked is set once an open wait passed the soft timeout; it counts only while that wait stays open.
++	marked atomic.Bool
++
++	access sync.Mutex
++	timer  *time.Timer
++	closed bool
++	// since is where the wait counts from: its start, or the last poll that found nothing sent.
++	since    int64
++	sentBase uint64
++	onWire   bool
++}
++
++func newAnswerWatch(receive *receiveTracker, timeouts func() (soft, hard time.Duration), packetsSent func() uint64, expire func(error)) *answerWatch {
++	return &answerWatch{receive: receive, timeouts: timeouts, packetsSent: packetsSent, expire: expire, poll: answerPoll}
 +}
 +
 +func (w *answerWatch) open() bool {
 +	return w.waiting.Load() > w.receive.lastMono.Load()
 +}
 +
-+// sent marks data handed to quic-go; only the first send of an unanswered episode touches the timer.
++// unanswered reports a wait past the soft timeout that the server has not answered since.
++func (w *answerWatch) unanswered() bool {
++	return w.marked.Load() && w.open()
++}
++
++// sent marks data handed to quic-go; only the first send of a wait takes the lock.
 +func (w *answerWatch) sent() {
 +	if w.open() {
 +		return
 +	}
-+	w.waiting.Store(w.receive.clock().mono)
-+	if w.armed.CompareAndSwap(false, true) {
-+		w.schedule(w.timeout())
-+	}
-+}
-+
-+func (w *answerWatch) schedule(d time.Duration) {
 +	w.access.Lock()
 +	defer w.access.Unlock()
-+	if w.closed {
++	if w.closed || w.open() {
 +		return
 +	}
++	now := w.receive.clock().mono
++	w.marked.Store(false)
++	w.since = now
++	w.sentBase = w.packetsSent()
++	w.onWire = false
++	w.waiting.Store(now)
++	w.scheduleLocked(w.poll)
++}
++
++func (w *answerWatch) scheduleLocked(d time.Duration) {
 +	if w.timer == nil {
 +		w.timer = time.AfterFunc(d, w.fire)
 +	} else {
@@ -81,29 +109,40 @@ index 0000000..d39ef7d
 +
 +func (w *answerWatch) fire() {
 +	w.access.Lock()
-+	if w.closed {
++	if w.closed || !w.open() {
 +		w.access.Unlock()
 +		return
 +	}
-+	if w.open() {
-+		timeout := w.timeout()
-+		waited := time.Duration(w.receive.clock().mono - w.waiting.Load())
-+		if waited < timeout {
-+			w.timer.Reset(timeout - waited)
++	now := w.receive.clock().mono
++	soft, hard := w.timeouts()
++	if !w.onWire {
++		if w.packetsSent() == w.sentBase {
++			// Flow control or congestion still holds the data, so there is nothing a server could have answered.
++			if time.Duration(now-w.waiting.Load()) < hard {
++				w.since = now
++				w.scheduleLocked(w.poll)
++			}
++			// Held past the hard timeout, the wait is left to quic-go's idle timer until the server is heard from.
 +			w.access.Unlock()
 +			return
 +		}
-+		w.closed = true
++		w.onWire = true
++	}
++	waited := time.Duration(now - w.since)
++	if waited < soft {
++		w.scheduleLocked(soft - waited)
 +		w.access.Unlock()
-+		w.expire(E.Cause(errNoAnswer, "nothing received for ", waited.Round(100*time.Millisecond), " after sending"))
 +		return
 +	}
-+	w.armed.Store(false)
-+	w.access.Unlock()
-+	// A send that saw the timer still armed relies on it, so pick up an episode it opened meanwhile.
-+	if w.open() && w.armed.CompareAndSwap(false, true) {
-+		w.schedule(w.timeout())
++	w.marked.Store(true)
++	if waited < hard {
++		w.scheduleLocked(hard - waited)
++		w.access.Unlock()
++		return
 +	}
++	w.closed = true
++	w.access.Unlock()
++	w.expire(E.Cause(errNoAnswer, "nothing received for ", waited.Round(100*time.Millisecond), " after sending"))
 +}
 +
 +func (w *answerWatch) close() {
@@ -116,10 +155,10 @@ index 0000000..d39ef7d
 +}
 diff --git a/hysteria2/answer_test.go b/hysteria2/answer_test.go
 new file mode 100644
-index 0000000..34ccddd
+index 0000000..1cd2ae6
 --- /dev/null
 +++ b/hysteria2/answer_test.go
-@@ -0,0 +1,223 @@
+@@ -0,0 +1,447 @@
 +package hysteria2
 +
 +import (
@@ -146,73 +185,162 @@ index 0000000..34ccddd
 +			t.Errorf("%s: %v, want %v", testCase.name, got, testCase.want)
 +		}
 +	}
++	if got := answerHardTimeoutFor(minAnswerTimeout, minAnswerHardTimeout); got != minAnswerHardTimeout {
++		t.Errorf("hard timeout on a fast path: %v, want the %v floor", got, minAnswerHardTimeout)
++	}
++	if got := answerHardTimeoutFor(10*time.Second, minAnswerHardTimeout); got != 20*time.Second {
++		t.Errorf("hard timeout on a slow path: %v, want twice the soft one", got)
++	}
 +}
 +
-+func TestAnswerWatchEpisodes(t *testing.T) {
-+	clock := &fakeClock{}
-+	tracker := newReceiveTracker(clock.read, time.Minute)
-+	var expired atomic.Int32
-+	var lastErr atomic.Value
-+	watch := newAnswerWatch(tracker, func() time.Duration { return 5 * time.Second }, func(err error) {
-+		expired.Add(1)
-+		lastErr.Store(err)
++type answerProbe struct {
++	clock   *fakeClock
++	tracker *receiveTracker
++	watch   *answerWatch
++	packets atomic.Uint64
++	expired atomic.Int32
++	lastErr atomic.Value
++}
++
++func newAnswerProbe(t *testing.T) *answerProbe {
++	t.Helper()
++	p := &answerProbe{clock: &fakeClock{}}
++	p.tracker = newReceiveTracker(p.clock.read, time.Minute)
++	p.watch = newAnswerWatch(p.tracker, func() (time.Duration, time.Duration) {
++		return 5 * time.Second, 15 * time.Second
++	}, p.packets.Load, func(err error) {
++		p.expired.Add(1)
++		p.lastErr.Store(err)
 +	})
-+	defer watch.close()
++	// Tests drive fire by hand; a long poll keeps the real timer from racing them.
++	p.watch.poll = time.Hour
++	t.Cleanup(p.watch.close)
++	return p
++}
 +
-+	clock.advance(time.Second)
-+	watch.sent()
-+	start := watch.waiting.Load()
-+	clock.advance(time.Second)
-+	watch.sent()
-+	if watch.waiting.Load() != start {
-+		t.Fatal("a later send moved the start of an unanswered episode")
++// send hands data to the watch and lets it reach the wire.
++func (p *answerProbe) send() {
++	p.watch.sent()
++	p.packets.Add(1)
++}
++
++func (p *answerProbe) at(d time.Duration) {
++	p.clock.advance(d)
++	p.watch.fire()
++}
++
++func TestAnswerWatchStages(t *testing.T) {
++	p := newAnswerProbe(t)
++	p.clock.advance(time.Second)
++	p.send()
++	start := p.watch.waiting.Load()
++	p.clock.advance(time.Second)
++	p.send()
++	if p.watch.waiting.Load() != start {
++		t.Fatal("a later send moved the start of an unanswered wait")
 +	}
 +
-+	clock.advance(time.Second)
-+	tracker.touch()
-+	watch.fire()
-+	if expired.Load() != 0 || watch.armed.Load() {
-+		t.Fatal("an answered episode kept the watch armed or expired it")
++	p.at(3900 * time.Millisecond)
++	if p.watch.unanswered() {
++		t.Fatal("marked before the soft timeout")
++	}
++	p.at(100 * time.Millisecond)
++	if !p.watch.unanswered() || p.expired.Load() != 0 {
++		t.Fatal("not marked, or closed, at the soft timeout")
 +	}
 +
-+	clock.advance(time.Second)
-+	watch.sent()
-+	if watch.waiting.Load() <= tracker.lastMono.Load() || !watch.armed.Load() {
-+		t.Fatal("a send after the answer did not open a new episode")
++	p.clock.advance(time.Second)
++	p.tracker.touch()
++	if p.watch.unanswered() {
++		t.Fatal("a reply did not clear the mark")
 +	}
-+	clock.advance(4 * time.Second)
-+	watch.fire()
-+	if expired.Load() != 0 {
-+		t.Fatal("expired before the timeout")
++	p.watch.fire()
++	p.clock.advance(time.Millisecond)
++	p.send()
++	if p.watch.unanswered() {
++		t.Fatal("a new wait inherited the old mark")
 +	}
-+	clock.advance(time.Second)
-+	watch.fire()
-+	if expired.Load() != 1 {
-+		t.Fatal("unanswered episode did not expire at the timeout")
++
++	p.at(5 * time.Second)
++	if !p.watch.unanswered() {
++		t.Fatal("second wait not marked at the soft timeout")
 +	}
-+	if err, _ := lastErr.Load().(error); !errors.Is(err, errNoAnswer) {
-+		t.Fatal("expired with another error: ", err)
++	p.at(9900 * time.Millisecond)
++	if p.expired.Load() != 0 {
++		t.Fatal("closed before the hard timeout")
 +	}
-+	watch.fire()
-+	watch.sent()
-+	if expired.Load() != 1 {
-+		t.Fatal("watch acted after it expired")
++	p.at(100 * time.Millisecond)
++	if p.expired.Load() != 1 {
++		t.Fatal("unanswered wait not closed at the hard timeout")
++	}
++	if err, _ := p.lastErr.Load().(error); !errors.Is(err, errNoAnswer) {
++		t.Fatal("closed with another error: ", err)
++	}
++	p.watch.fire()
++	p.send()
++	if p.expired.Load() != 1 {
++		t.Fatal("watch acted after it closed")
++	}
++}
++
++func TestAnswerWatchCountsFromTheWire(t *testing.T) {
++	p := newAnswerProbe(t)
++	p.clock.advance(time.Second)
++	// Flow control holds the data: the send returns, but nothing leaves.
++	p.watch.sent()
++	for range 14 {
++		p.at(time.Second)
++	}
++	if p.watch.unanswered() || p.expired.Load() != 0 {
++		t.Fatal("a send that never left was counted as unanswered")
++	}
++	// The window opens, or a keepalive goes out, half a second after the last poll.
++	p.clock.advance(500 * time.Millisecond)
++	p.packets.Add(1)
++	p.at(500 * time.Millisecond)
++	p.at(3500 * time.Millisecond)
++	if p.watch.unanswered() {
++		t.Fatal("marked before the soft timeout counted from the last poll that found nothing sent")
++	}
++	p.at(time.Second)
++	if !p.watch.unanswered() {
++		t.Fatal("data that left and went unanswered was not marked")
++	}
++}
++
++func TestAnswerWatchGivesUpOnHeldData(t *testing.T) {
++	p := newAnswerProbe(t)
++	p.watch.poll = 10 * time.Millisecond
++	p.clock.advance(time.Second)
++	p.watch.sent()
++	p.clock.advance(16 * time.Second)
++	p.watch.fire()
++	time.Sleep(100 * time.Millisecond)
++	if p.watch.timer.Stop() {
++		t.Fatal("polling went on past the hard timeout for data that never left")
++	}
++	if p.expired.Load() != 0 {
++		t.Fatal("held data closed the connection")
 +	}
 +}
 +
 +func TestAnswerWatchIdleAndClose(t *testing.T) {
 +	var expired atomic.Int32
-+	idle := newAnswerWatch(newReceiveTracker(coarseClock, time.Minute), func() time.Duration { return 20 * time.Millisecond }, func(error) {
++	timeouts := func() (time.Duration, time.Duration) { return 20 * time.Millisecond, 40 * time.Millisecond }
++	sentPackets := func() uint64 { return uint64(time.Now().UnixNano()) }
++	idle := newAnswerWatch(newReceiveTracker(coarseClock, time.Minute), timeouts, sentPackets, func(error) {
 +		expired.Add(1)
 +	})
 +	defer idle.close()
-+	closed := newAnswerWatch(newReceiveTracker(coarseClock, time.Minute), func() time.Duration { return 20 * time.Millisecond }, func(error) {
++	closed := newAnswerWatch(newReceiveTracker(coarseClock, time.Minute), timeouts, sentPackets, func(error) {
 +		expired.Add(1)
 +	})
++	closed.poll = 5 * time.Millisecond
++	time.Sleep(time.Millisecond)
 +	closed.sent()
 +	closed.close()
 +	time.Sleep(200 * time.Millisecond)
-+	if idle.armed.Load() || idle.timer != nil {
++	if idle.timer != nil {
 +		t.Fatal("a watch that never sent armed a timer")
 +	}
 +	if expired.Load() != 0 {
@@ -224,34 +352,75 @@ index 0000000..34ccddd
 +	}
 +}
 +
-+func newAnswerHarness(t *testing.T, salamanderPassword string, floor time.Duration) *staleHarness {
++var answerVariants = []struct {
++	name    string
++	options harnessOptions
++}{
++	{"plain", harnessOptions{}},
++	{"salamander", harnessOptions{salamander: "obfs"}},
++	{"gecko", harnessOptions{gecko: "obfs"}},
++	{"hop", harnessOptions{hop: true}},
++}
++
++const (
++	testAnswerSoft = 300 * time.Millisecond
++	testAnswerHard = 1200 * time.Millisecond
++)
++
++func newAnswerHarness(t *testing.T, options harnessOptions) *staleHarness {
 +	t.Helper()
-+	h := newStaleHarness(t, salamanderPassword)
++	h := newHarness(t, options)
 +	h.client.clock = coarseClock
-+	h.client.answerFloor = floor
++	h.client.answerFloor = testAnswerSoft
++	h.client.answerHardFloor = testAnswerHard
++	h.client.answerPoll = 20 * time.Millisecond
 +	return h
 +}
 +
-+func waitNoAnswer(t *testing.T, conn *clientQUICConnection, sentAt time.Time, floor time.Duration) {
++func waitNoAnswer(t *testing.T, conn *clientQUICConnection, sentAt time.Time) {
 +	t.Helper()
 +	select {
 +	case <-conn.connDone:
-+	case <-time.After(floor + 5*time.Second):
++	case <-time.After(testAnswerHard + 5*time.Second):
 +		t.Fatal("unanswered connection left open")
 +	}
 +	if !errors.Is(conn.connErr, errNoAnswer) {
 +		t.Fatal("connection closed for another reason: ", conn.connErr)
 +	}
-+	if waited := time.Since(sentAt); waited < floor-50*time.Millisecond {
-+		t.Fatalf("closed after %v, before the %v timeout", waited, floor)
++	if waited := time.Since(sentAt); waited < testAnswerHard-100*time.Millisecond {
++		t.Fatalf("closed after %v, before the %v hard timeout", waited, testAnswerHard)
 +	}
 +}
 +
++// waitMarked offers until new flows leave conn, which happens once the soft timeout passed unanswered.
++func waitMarked(t *testing.T, h *staleHarness, conn *clientQUICConnection, sentAt time.Time) *clientQUICConnection {
++	t.Helper()
++	for {
++		if conn.answer.unanswered() {
++			break
++		}
++		if time.Since(sentAt) > testAnswerHard {
++			t.Fatal("not marked before the hard timeout")
++		}
++		time.Sleep(10 * time.Millisecond)
++	}
++	if waited := time.Since(sentAt); waited < testAnswerSoft-50*time.Millisecond {
++		t.Fatalf("marked after %v, before the %v soft timeout", waited, testAnswerSoft)
++	}
++	replacement := h.offer(t)
++	if replacement == conn {
++		t.Fatal("new flows kept an unanswered connection")
++	}
++	if !conn.active() {
++		t.Fatal("the soft timeout closed the connection")
++	}
++	return replacement
++}
++
 +func TestNoAnswerClosesAfterDatagram(t *testing.T) {
-+	for _, variant := range staleVariants {
++	for _, variant := range answerVariants {
 +		t.Run(variant.name, func(t *testing.T) {
-+			const floor = 500 * time.Millisecond
-+			h := newAnswerHarness(t, variant.salamander, floor)
++			h := newAnswerHarness(t, variant.options)
 +			conn := h.offer(t)
 +			session := h.listen(t)
 +			echoPacket(t, session)
@@ -261,23 +430,25 @@ index 0000000..34ccddd
 +			if _, err := session.WriteTo([]byte("ping"), staleEchoDestination.UDPAddr()); err != nil {
 +				t.Fatal(err)
 +			}
-+			waitNoAnswer(t, conn, sentAt, floor)
++			replacement := waitMarked(t, h, conn, sentAt)
++			waitNoAnswer(t, conn, sentAt)
 +			_ = session.SetReadDeadline(time.Now().Add(5 * time.Second))
 +			if _, _, err := session.ReadFrom(make([]byte, 64)); err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
 +				t.Fatal("UDP session outlived its unanswered connection: ", err)
 +			}
-+			if h.offer(t) == conn {
-+				t.Fatal("unanswered connection offered again")
++			if !replacement.active() {
++				t.Fatal("replacement closed with the unanswered connection")
 +			}
++			echoPacket(t, h.listen(t))
++			assertNotRetired(t, h, conn)
 +		})
 +	}
 +}
 +
 +func TestNoAnswerClosesAfterStreamRequest(t *testing.T) {
-+	for _, variant := range staleVariants {
++	for _, variant := range answerVariants {
 +		t.Run(variant.name, func(t *testing.T) {
-+			const floor = 500 * time.Millisecond
-+			h := newAnswerHarness(t, variant.salamander, floor)
++			h := newAnswerHarness(t, variant.options)
 +			conn := h.offer(t)
 +			echoStream(t, h.dial(t))
 +			h.server.silence(conn.quicConn.LocalAddr())
@@ -286,95 +457,233 @@ index 0000000..34ccddd
 +			if _, err := stream.Write([]byte("request")); err != nil {
 +				t.Fatal(err)
 +			}
-+			waitNoAnswer(t, conn, sentAt, floor)
++			waitMarked(t, h, conn, sentAt)
++			waitNoAnswer(t, conn, sentAt)
 +			_ = stream.SetReadDeadline(time.Now().Add(5 * time.Second))
 +			if _, err := stream.Read(make([]byte, 64)); err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
 +				t.Fatal("stream outlived its unanswered connection: ", err)
 +			}
++			echoStream(t, h.dial(t))
++			assertNotRetired(t, h, conn)
 +		})
 +	}
 +}
 +
-+func TestNoAnswerKeepsIdleConnection(t *testing.T) {
-+	const floor = 300 * time.Millisecond
-+	h := newAnswerHarness(t, "", floor)
-+	conn := h.offer(t)
-+	echoPacket(t, h.listen(t))
-+	h.server.silence(conn.quicConn.LocalAddr())
-+	time.Sleep(6 * floor)
-+	if !conn.active() || h.offer(t) != conn {
-+		t.Fatal("idle connection closed although nothing was sent")
++func TestNoAnswerOutageKeepsExistingFlows(t *testing.T) {
++	for _, variant := range answerVariants {
++		t.Run(variant.name, func(t *testing.T) {
++			h := newAnswerHarness(t, variant.options)
++			conn := h.offer(t)
++			stream := h.dial(t)
++			echoStream(t, stream)
++			h.server.silence(conn.quicConn.LocalAddr())
++			sentAt := time.Now()
++			_ = stream.SetDeadline(time.Now().Add(10 * time.Second))
++			if _, err := stream.Write([]byte("hello")); err != nil {
++				t.Fatal(err)
++			}
++			replacement := waitMarked(t, h, conn, sentAt)
++			// The signal comes back before the hard timeout: the old flow resumes, new ones stay on the replacement.
++			h.server.unsilence(conn.quicConn.LocalAddr())
++			buffer := make([]byte, 5)
++			if _, err := stream.Read(buffer); err != nil || string(buffer) != "hello" {
++				t.Fatalf("flow on the connection did not resume after the outage: %q %v", buffer, err)
++			}
++			time.Sleep(testAnswerHard)
++			if !conn.active() {
++				t.Fatal("the connection was closed although the server answered: ", conn.connErr)
++			}
++			if h.offer(t) != replacement {
++				t.Fatal("new flows went back to the retired connection")
++			}
++			_ = stream.Close()
++			select {
++			case <-conn.connDone:
++			case <-time.After(5 * time.Second):
++				t.Fatal("retired connection outlived its last flow")
++			}
++			if errors.Is(conn.connErr, errNoAnswer) {
++				t.Fatal("retired connection closed as unanswered: ", conn.connErr)
++			}
++			assertNotRetired(t, h, conn)
++		})
 +	}
 +}
 +
-+func TestNoAnswerKeepsSlowServer(t *testing.T) {
-+	const floor = 800 * time.Millisecond
-+	h := newAnswerHarness(t, "", floor)
++func TestNoAnswerKeepsFlowControlBlockedWrite(t *testing.T) {
++	h := newAnswerHarness(t, harnessOptions{})
++	conn := h.offer(t)
++	echoStream(t, h.dial(t))
++	// Three unread streams outgrow the server's connection window, so the client stops sending on every stream.
++	for range 3 {
++		stream, err := h.client.DialConn(h.ctx, staleHoldDestination)
++		if err != nil {
++			t.Fatal(err)
++		}
++		t.Cleanup(func() { _ = stream.Close() })
++		go func() { _, _ = stream.Write(make([]byte, 9<<20)) }()
++	}
++	deadline := time.Now().Add(10 * time.Second)
++	for {
++		before := conn.quicConn.ConnectionStats().PacketsSent
++		time.Sleep(300 * time.Millisecond)
++		if conn.quicConn.ConnectionStats().PacketsSent == before {
++			break
++		}
++		if time.Now().After(deadline) {
++			t.Fatal("the connection window never ran out")
++		}
++	}
++	// A new flow's request fits the packet buffer, so the write returns although nothing can be sent.
++	stream := h.dial(t)
++	_ = stream.SetWriteDeadline(time.Now().Add(5 * time.Second))
++	if _, err := stream.Write([]byte("request")); err != nil {
++		t.Fatal(err)
++	}
++	time.Sleep(testAnswerHard + 500*time.Millisecond)
++	if conn.answer.unanswered() || !conn.active() {
++		t.Fatal("a write held by flow control was counted as unanswered: ", conn.connErr)
++	}
++	if h.offer(t) != conn {
++		t.Fatal("new flows left a connection held only by flow control")
++	}
++}
++
++func TestNoAnswerKeepsIdleConnection(t *testing.T) {
++	h := newAnswerHarness(t, harnessOptions{})
++	conn := h.offer(t)
++	echoPacket(t, h.listen(t))
++	h.server.silence(conn.quicConn.LocalAddr())
++	time.Sleep(testAnswerHard + testAnswerSoft)
++	if !conn.active() || h.offer(t) != conn {
++		t.Fatal("idle connection closed or left although nothing was sent")
++	}
++}
++
++func TestNoAnswerKeepsReplyJustInTime(t *testing.T) {
++	h := newAnswerHarness(t, harnessOptions{})
 +	conn := h.offer(t)
 +	session := h.listen(t)
 +	echoPacket(t, session)
-+	h.server.setDelay(floor / 2)
-+	for range 3 {
-+		echoPacket(t, session)
++	// The first slow reply meets a soft timeout still at the floor; it lands just before it.
++	h.server.setDelay(testAnswerSoft - 100*time.Millisecond)
++	echoPacket(t, session)
++	if conn.answer.marked.Load() {
++		t.Fatal("a reply within the soft timeout marked the connection")
 +	}
 +	if !conn.active() || h.offer(t) != conn {
-+		t.Fatal("connection to a slow but live server closed: ", conn.connErr)
++		t.Fatal("connection to a live server left or closed: ", conn.connErr)
 +	}
 +}
 +
 +func TestNoAnswerTimeoutFollowsRTT(t *testing.T) {
-+	const floor = 300 * time.Millisecond
-+	h := newAnswerHarness(t, "", floor)
++	h := newAnswerHarness(t, harnessOptions{})
 +	conn := h.offer(t)
 +	session := h.listen(t)
 +	echoPacket(t, session)
 +	// Raise the delay in steps so the RTT estimate follows, then sit above the floor.
-+	for delay := 50 * time.Millisecond; delay <= 2*floor; delay += 50 * time.Millisecond {
++	for delay := 50 * time.Millisecond; delay <= 2*testAnswerSoft; delay += 50 * time.Millisecond {
 +		h.server.setDelay(delay)
 +		echoPacket(t, session)
 +	}
 +	for range 3 {
 +		echoPacket(t, session)
 +	}
-+	if !conn.active() || h.offer(t) != conn {
-+		t.Fatal("a reply slower than the floor but within the RTT-based timeout closed the connection: ", conn.connErr)
++	if conn.answer.marked.Load() || !conn.active() || h.offer(t) != conn {
++		t.Fatal("a reply slower than the floor but within the RTT-based timeout marked or closed the connection: ", conn.connErr)
 +	}
-+	if timeout := conn.answer.timeout(); timeout <= 2*floor {
-+		t.Fatalf("timeout %v did not grow with the RTT", timeout)
++	if soft, _ := conn.answer.timeouts(); soft <= 2*testAnswerSoft {
++		t.Fatalf("soft timeout %v did not grow with the RTT", soft)
++	}
++}
++
++func assertNotRetired(t *testing.T, h *staleHarness, conn *clientQUICConnection) {
++	t.Helper()
++	h.client.connAccess.Lock()
++	_, retired := h.client.retired[conn]
++	h.client.connAccess.Unlock()
++	if retired {
++		t.Fatal("closed connection still held as retired")
 +	}
 +}
 diff --git a/hysteria2/client.go b/hysteria2/client.go
-index 68f97ac..792027b 100644
+index 68f97ac..371711c 100644
 --- a/hysteria2/client.go
 +++ b/hysteria2/client.go
-@@ -79,6 +79,7 @@ type Client struct {
+@@ -79,11 +79,16 @@ type Client struct {
  	controlClient      *realm.ControlClient
  	clock              func() clockReading
  	staleAfter         time.Duration
 +	answerFloor        time.Duration
++	answerHardFloor    time.Duration
++	answerPoll         time.Duration
  
  	connAccess sync.Mutex
  	conn       *clientQUICConnection
-@@ -172,6 +173,7 @@ func NewClient(options ClientOptions) (*Client, error) {
+-	closeIdle  atomic.Bool
+-	pending    *clientOffer
++	// retired holds unanswered connections that new flows left; each closes with its last flow or at the hard timeout.
++	retired   map[*clientQUICConnection]struct{}
++	closeIdle atomic.Bool
++	pending   *clientOffer
+ }
+ 
+ func NewClient(options ClientOptions) (*Client, error) {
+@@ -172,6 +177,9 @@ func NewClient(options ClientOptions) (*Client, error) {
  		controlClient:      controlClient,
  		clock:              coarseClock,
  		staleAfter:         staleAfterFor(quicConfig),
 +		answerFloor:        minAnswerTimeout,
++		answerHardFloor:    minAnswerHardTimeout,
++		answerPoll:         answerPoll,
  	}, nil
  }
  
-@@ -628,6 +630,10 @@ func (c *Client) authenticateAndWrap(ctx context.Context, rawConn io.Closer, rec
+@@ -179,15 +187,22 @@ func (c *Client) offer(ctx context.Context) (*clientQUICConnection, error) {
+ 	c.connAccess.Lock()
+ 	conn := c.conn
+ 	if conn != nil && conn.active() {
+-		staleErr := conn.receive.staleError()
+-		if staleErr == nil {
++		if staleErr := conn.receive.staleError(); staleErr != nil {
++			c.conn = nil
+ 			c.connAccess.Unlock()
+-			return conn, nil
++			conn.closeWithError(staleErr)
++			return c.offer(ctx)
++		}
++		if conn.answer.unanswered() {
++			// Past the soft timeout new flows dial afresh; the flows already here wait for the server or the hard timeout.
++			c.conn = nil
++			c.retireLocked(conn)
++			c.connAccess.Unlock()
++			conn.closeIfUnused()
++			return c.offer(ctx)
+ 		}
+-		c.conn = nil
+ 		c.connAccess.Unlock()
+-		conn.closeWithError(staleErr)
+-		return c.offer(ctx)
++		return conn, nil
+ 	}
+ 	pending := c.pending
+ 	if pending != nil {
+@@ -628,6 +643,14 @@ func (c *Client) authenticateAndWrap(ctx context.Context, rawConn io.Closer, rec
  		closeIdle:   &c.closeIdle,
  		receive:     receive,
  	}
-+	answerFloor := c.answerFloor
-+	conn.answer = newAnswerWatch(receive, func() time.Duration {
-+		return answerTimeoutFor(quicConn.ConnectionStats(), answerFloor)
++	answerFloor, answerHardFloor := c.answerFloor, c.answerHardFloor
++	conn.answer = newAnswerWatch(receive, func() (time.Duration, time.Duration) {
++		soft := answerTimeoutFor(quicConn.ConnectionStats(), answerFloor)
++		return soft, answerHardTimeoutFor(soft, answerHardFloor)
++	}, func() uint64 {
++		return quicConn.ConnectionStats().PacketsSent
 +	}, conn.closeWithError)
++	conn.answer.poll = c.answerPoll
  	if !c.udpDisabled {
  		go c.loopMessages(conn)
  	}
-@@ -673,6 +679,7 @@ func (c *Client) ListenPacket(ctx context.Context) (net.PacketConn, error) {
+@@ -673,6 +696,7 @@ func (c *Client) ListenPacket(ctx context.Context) (net.PacketConn, error) {
  	})
  	// A long-lived session never passes through offer again, so its sends must catch a stale connection.
  	clientPacketConn.checkSend = conn.closeIfStale
@@ -382,23 +691,101 @@ index 68f97ac..792027b 100644
  	conn.access.Lock()
  	select {
  	case <-conn.connDone:
-@@ -751,6 +758,7 @@ type clientQUICConnection struct {
+@@ -697,6 +721,10 @@ func (c *Client) CloseWithError(err error) error {
+ 		pending.discarded = true
+ 		pending.cause = err
+ 	}
++	retired := make([]*clientQUICConnection, 0, len(c.retired))
++	for retiredConn := range c.retired {
++		retired = append(retired, retiredConn)
++	}
+ 	c.connAccess.Unlock()
+ 
+ 	if pending != nil {
+@@ -705,9 +733,32 @@ func (c *Client) CloseWithError(err error) error {
+ 	if conn != nil {
+ 		conn.closeWithError(err)
+ 	}
++	for _, retiredConn := range retired {
++		retiredConn.closeWithError(err)
++	}
+ 	return nil
+ }
+ 
++func (c *Client) retireLocked(conn *clientQUICConnection) {
++	if c.retired == nil {
++		c.retired = make(map[*clientQUICConnection]struct{})
++	}
++	conn.retiredFrom.Store(c)
++	c.retired[conn] = struct{}{}
++	// A close that ran before retiredFrom was set did not drop it.
++	select {
++	case <-conn.connDone:
++		delete(c.retired, conn)
++	default:
++	}
++}
++
++func (c *Client) dropRetired(conn *clientQUICConnection) {
++	c.connAccess.Lock()
++	delete(c.retired, conn)
++	c.connAccess.Unlock()
++}
++
+ func (c *Client) SetKeepIdleConnections(keep bool) {
+ 	c.closeIdle.Store(!keep)
+ 	if !keep {
+@@ -751,6 +802,9 @@ type clientQUICConnection struct {
  	streams      int
  	closeIdle    *atomic.Bool
  	receive      *receiveTracker
 +	answer       *answerWatch
++	// retiredFrom is the client whose new flows left this connection; it then closes with its last flow.
++	retiredFrom atomic.Pointer[Client]
  }
  
  func (c *clientQUICConnection) closeIfStale() error {
-@@ -834,6 +842,7 @@ func (c *clientQUICConnection) closeWithError(err error) {
+@@ -790,7 +844,7 @@ func (c *clientQUICConnection) acquireStream() bool {
+ func (c *clientQUICConnection) releaseStream(keepSession bool) {
+ 	c.access.Lock()
+ 	c.streams--
+-	closed := c.closeIdle.Load() && !keepSession && c.streams == 0 && len(c.udpConnMap) == 0 && c.markClosedLocked(os.ErrClosed)
++	closed := (c.retiredFrom.Load() != nil || c.closeIdle.Load() && !keepSession) && c.streams == 0 && len(c.udpConnMap) == 0 && c.markClosedLocked(os.ErrClosed)
+ 	c.access.Unlock()
+ 	if closed {
+ 		c.closeTransport()
+@@ -800,7 +854,7 @@ func (c *clientQUICConnection) releaseStream(keepSession bool) {
+ func (c *clientQUICConnection) releaseUDPSession(sessionID uint32) {
+ 	c.access.Lock()
+ 	delete(c.udpConnMap, sessionID)
+-	closed := c.closeIdle.Load() && c.streams == 0 && len(c.udpConnMap) == 0 && c.markClosedLocked(os.ErrClosed)
++	closed := (c.retiredFrom.Load() != nil || c.closeIdle.Load()) && c.streams == 0 && len(c.udpConnMap) == 0 && c.markClosedLocked(os.ErrClosed)
+ 	c.access.Unlock()
+ 	if closed {
+ 		c.closeTransport()
+@@ -833,7 +887,21 @@ func (c *clientQUICConnection) closeWithError(err error) {
+ 	c.closeTransport()
  }
  
++// closeIfUnused closes a retired connection that has no flow left to wait for.
++func (c *clientQUICConnection) closeIfUnused() {
++	c.access.Lock()
++	closed := c.streams == 0 && len(c.udpConnMap) == 0 && c.markClosedLocked(os.ErrClosed)
++	c.access.Unlock()
++	if closed {
++		c.closeTransport()
++	}
++}
++
  func (c *clientQUICConnection) closeTransport() {
++	if client := c.retiredFrom.Load(); client != nil {
++		client.dropRetired(c)
++	}
 +	c.answer.close()
  	_ = c.quicConn.CloseWithError(0, "")
  	_ = c.rawConn.Close()
  }
-@@ -882,10 +891,14 @@ func (c *clientConn) Write(p []byte) (n int, err error) {
+@@ -882,10 +950,14 @@ func (c *clientConn) Write(p []byte) (n int, err error) {
  		if err != nil {
  			return
  		}
@@ -439,10 +826,66 @@ index 0ad79e1..8e6f3e3 100644
  
  func (c *udpPacketConn) Close() error {
 diff --git a/hysteria2/stale_test.go b/hysteria2/stale_test.go
-index c131d2a..1a08a37 100644
+index c131d2a..a8c8234 100644
 --- a/hysteria2/stale_test.go
 +++ b/hysteria2/stale_test.go
-@@ -307,6 +307,8 @@ func newStaleHarness(t *testing.T, salamanderPassword string) *staleHarness {
+@@ -14,6 +14,7 @@ import (
+ 	"net"
+ 	"net/netip"
+ 	"os"
++	"strconv"
+ 	"sync"
+ 	"testing"
+ 	"time"
+@@ -268,6 +269,18 @@ type staleHarness struct {
+ 
+ func newStaleHarness(t *testing.T, salamanderPassword string) *staleHarness {
+ 	t.Helper()
++	return newHarness(t, harnessOptions{salamander: salamanderPassword})
++}
++
++type harnessOptions struct {
++	salamander string
++	gecko      string
++	hop        bool
++}
++
++func newHarness(t *testing.T, options harnessOptions) *staleHarness {
++	t.Helper()
++	salamanderPassword := options.salamander
+ 	ctx, cancel := context.WithCancel(context.Background())
+ 	t.Cleanup(cancel)
+ 	clientTLS, serverTLS := staleTLSConfigs(t)
+@@ -281,6 +294,7 @@ func newStaleHarness(t *testing.T, salamanderPassword string) *staleHarness {
+ 		Context:            ctx,
+ 		Logger:             logger.NOP(),
+ 		SalamanderPassword: salamanderPassword,
++		GeckoPassword:      options.gecko,
+ 		TLSConfig:          serverTLS,
+ 		UDPTimeout:         time.Minute,
+ 		Handler:            echoHandler{},
+@@ -293,12 +307,20 @@ func newStaleHarness(t *testing.T, salamanderPassword string) *staleHarness {
+ 		t.Fatal(err)
+ 	}
+ 	t.Cleanup(func() { _ = service.Close() })
++	var serverPorts []string
++	if options.hop {
++		// One port keeps the server on a single socket while every dial still goes through the hopping conn.
++		port := udpConn.LocalAddr().(*net.UDPAddr).Port
++		serverPorts = []string{strconv.Itoa(port) + ":" + strconv.Itoa(port)}
++	}
+ 	client, err := NewClient(ClientOptions{
+ 		Context:            ctx,
+ 		Dialer:             N.SystemDialer,
+ 		Logger:             logger.NOP(),
+ 		ServerAddress:      M.SocksaddrFromNet(udpConn.LocalAddr()),
++		ServerPorts:        serverPorts,
+ 		SalamanderPassword: salamanderPassword,
++		GeckoPassword:      options.gecko,
+ 		Password:           stalePassword,
+ 		TLSConfig:          clientTLS,
+ 	})
+@@ -307,6 +329,8 @@ func newStaleHarness(t *testing.T, salamanderPassword string) *staleHarness {
  	}
  	clock := &fakeClock{}
  	client.clock = clock.read
@@ -451,7 +894,7 @@ index c131d2a..1a08a37 100644
  	t.Cleanup(func() { _ = client.CloseWithError(os.ErrClosed) })
  	return &staleHarness{ctx: ctx, client: client, clock: clock, server: server}
  }
-@@ -434,23 +436,37 @@ func (c *fakeClock) stamped(tracker *receiveTracker) bool {
+@@ -434,36 +458,63 @@ func (c *fakeClock) stamped(tracker *receiveTracker) bool {
  	return tracker.lastBoot.Load() == now.boot && tracker.lastMono.Load() == now.mono
  }
  
@@ -490,3 +933,30 @@ index c131d2a..1a08a37 100644
  func (c *silencingPacketConn) silence(addr net.Addr) {
  	c.access.Lock()
  	c.silenced[M.SocksaddrFromNet(addr).Unwrap().AddrPort()] = true
+ 	c.access.Unlock()
+ }
+ 
++func (c *silencingPacketConn) unsilence(addr net.Addr) {
++	c.access.Lock()
++	delete(c.silenced, M.SocksaddrFromNet(addr).Unwrap().AddrPort())
++	c.access.Unlock()
++}
++
+ type echoHandler struct{}
+ 
+-func (echoHandler) NewConnectionEx(_ context.Context, conn net.Conn, _ M.Socksaddr, _ M.Socksaddr, _ N.CloseHandlerFunc) {
++// staleHoldDestination accepts a stream and never reads it, so the client's flow-control window runs out.
++var staleHoldDestination = M.ParseSocksaddr("198.51.100.1:9")
++
++func (echoHandler) NewConnectionEx(ctx context.Context, conn net.Conn, _ M.Socksaddr, destination M.Socksaddr, _ N.CloseHandlerFunc) {
+ 	defer conn.Close()
+ 	if N.ReportHandshakeSuccess(conn) != nil {
+ 		return
+ 	}
++	if destination == staleHoldDestination {
++		<-ctx.Done()
++		return
++	}
+ 	_, _ = io.Copy(conn, conn)
+ }
+ 
