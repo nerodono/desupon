@@ -4,10 +4,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -42,6 +45,8 @@ internal class ConfigActions(
     val onQr: () -> Unit,
     val onDelete: () -> Unit,
     val onChain: (ChainOp) -> Unit = {},
+    /** Starts picking configs, with this one picked. */
+    val onSelect: () -> Unit = {},
 )
 
 @Composable
@@ -51,7 +56,10 @@ internal fun ConfigItem.displayTitle(): String = title ?: when {
     else -> stringResource(R.string.subs_config_untitled, id.value)
 }
 
-/** A config, or a pasted list, in the configs tab; [chain] and [current] as on [SubscriptionCard]. */
+/**
+ * A config, or a pasted list, in the configs tab; [chain] and [current] as on [SubscriptionCard].
+ * A non-null [selected] shows a checkbox instead of the drag handle and makes a tap toggle it through [onToggle].
+ */
 @Composable
 internal fun ConfigCard(
     item: ConfigItem,
@@ -59,24 +67,28 @@ internal fun ConfigCard(
     modifier: Modifier = Modifier,
     chain: ChainRowUi? = null,
     current: Boolean = false,
+    selected: Boolean? = null,
+    onToggle: () -> Unit = {},
 ) {
     Card(
-        onClick = actions.onOpen,
+        onClick = if (selected != null) onToggle else actions.onOpen,
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         elevation = CardDefaults.cardElevation(defaultElevation = if (chain?.dragging == true) 8.dp else 0.dp),
     ) {
         Row {
-            if (chain != null) {
-                Box(Modifier.padding(top = 4.dp)) { DragHandle(chain.handle) }
+            when {
+                selected != null -> Box(Modifier.padding(top = 4.dp)) { Checkbox(checked = selected, onCheckedChange = { onToggle() }) }
+                chain != null -> Box(Modifier.padding(top = 4.dp)) { DragHandle(chain.handle) }
             }
-            ConfigBody(item, actions, chain, current, Modifier.weight(1f).padding(start = if (chain != null) 0.dp else 16.dp))
+            val inset = if (chain != null || selected != null) 0.dp else 16.dp
+            ConfigBody(item, actions, chain, current, menu = selected == null, Modifier.weight(1f).padding(start = inset))
         }
     }
 }
 
 @Composable
-private fun ConfigBody(item: ConfigItem, actions: ConfigActions, chain: ChainRowUi?, current: Boolean, modifier: Modifier) {
+private fun ConfigBody(item: ConfigItem, actions: ConfigActions, chain: ChainRowUi?, current: Boolean, menu: Boolean, modifier: Modifier) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     Column(modifier.padding(top = 4.dp, bottom = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -86,6 +98,7 @@ private fun ConfigBody(item: ConfigItem, actions: ConfigActions, chain: ChainRow
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 chain?.step?.let { StepNumber(it) }
+                if (item.isList) KindIcon(SubsIcons.Lines, R.string.subs_kind_list_cd) else KindIcon(SubsIcons.Key, R.string.subs_kind_config_cd)
                 item.flag?.let { Text(it, style = MaterialTheme.typography.titleMedium) }
                 Text(
                     text = item.displayTitle(),
@@ -96,7 +109,7 @@ private fun ConfigBody(item: ConfigItem, actions: ConfigActions, chain: ChainRow
                 )
                 if (current) NowBadge()
             }
-            ConfigOverflow(item, actions, chain)
+            if (menu) ConfigOverflow(item, actions, chain) else Spacer(Modifier.size(48.dp))
         }
         Column(Modifier.padding(end = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(text = Format.stats(statParts(item)), style = MaterialTheme.typography.bodySmall.tabular, color = muted)
@@ -154,6 +167,10 @@ private fun ConfigOverflow(item: ConfigItem, actions: ConfigActions, chain: Chai
                     actions.onQr()
                 })
             }
+            DropdownMenuItem(text = { Text(stringResource(R.string.subs_select)) }, onClick = {
+                open = false
+                actions.onSelect()
+            })
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.subs_delete), color = MaterialTheme.colorScheme.error) },
                 onClick = {

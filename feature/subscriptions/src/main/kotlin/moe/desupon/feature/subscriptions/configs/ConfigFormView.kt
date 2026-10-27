@@ -15,6 +15,8 @@ import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -23,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,9 +33,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import moe.desupon.feature.subscriptions.R
+import moe.desupon.feature.subscriptions.UiText
 import moe.desupon.feature.subscriptions.resolve
+import moe.desupon.feature.subscriptions.ui.SubsIcons
 
 internal fun FormProtocol.label(): String = when (this) {
     FormProtocol.VLESS -> "VLESS"
@@ -71,9 +78,10 @@ internal fun ConfigFormView(form: ConfigForm, enabled: Boolean, onChange: (Confi
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         )
+        val warnings = form.warnings()
         for (field in form.fields()) {
             when (field.kind) {
-                FieldKind.TEXT, FieldKind.NUMBER -> TextInput(form, field, enabled, onChange)
+                FieldKind.TEXT, FieldKind.NUMBER -> TextInput(form, field, warnings[field], enabled, onChange)
                 FieldKind.SWITCH -> SwitchInput(form, field, enabled, onChange)
                 FieldKind.CHOICE -> ChoiceInput(form, field, enabled, onChange)
             }
@@ -81,11 +89,15 @@ internal fun ConfigFormView(form: ConfigForm, enabled: Boolean, onChange: (Confi
     }
 }
 
+/** Credentials: hidden by default and typed with a password keyboard, so the IME does not learn them. */
+private val SECRETS = setOf(Field.PASSWORD, Field.OBFS_PASSWORD, Field.UUID, Field.REALITY_KEY)
+
 @Composable
-private fun TextInput(form: ConfigForm, field: Field, enabled: Boolean, onChange: (ConfigForm) -> Unit) {
+private fun TextInput(form: ConfigForm, field: Field, warning: UiText?, enabled: Boolean, onChange: (ConfigForm) -> Unit) {
     val error = form.errors[field]
     val hint = field.hint(form)
-    val mono = field == Field.PASSWORD || field == Field.OBFS_PASSWORD || field == Field.UUID || field == Field.REALITY_KEY
+    val secret = field in SECRETS
+    var shown by rememberSaveable(field) { mutableStateOf(false) }
     OutlinedTextField(
         value = form[field],
         onValueChange = { onChange(form.set(field, it)) },
@@ -95,12 +107,30 @@ private fun TextInput(form: ConfigForm, field: Field, enabled: Boolean, onChange
         isError = error != null,
         supportingText = when {
             error != null -> { { Text(error.resolve()) } }
+            warning != null -> { { Text(warning.resolve(), color = MaterialTheme.colorScheme.tertiary) } }
             hint != null -> { { Text(hint) } }
             else -> null
         },
-        textStyle = if (mono) MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace) else MaterialTheme.typography.bodyLarge,
+        textStyle = if (secret) MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace) else MaterialTheme.typography.bodyLarge,
+        visualTransformation = if (secret && !shown) PasswordVisualTransformation() else VisualTransformation.None,
+        trailingIcon = if (secret) {
+            {
+                IconButton(onClick = { shown = !shown }) {
+                    Icon(
+                        if (shown) SubsIcons.EyeOff else SubsIcons.Eye,
+                        contentDescription = stringResource(if (shown) R.string.subs_form_hide_secret_cd else R.string.subs_form_show_secret_cd),
+                    )
+                }
+            }
+        } else {
+            null
+        },
         keyboardOptions = KeyboardOptions(
-            keyboardType = if (field.kind == FieldKind.NUMBER) KeyboardType.Number else KeyboardType.Uri,
+            keyboardType = when {
+                field.kind == FieldKind.NUMBER -> KeyboardType.Number
+                secret -> KeyboardType.Password
+                else -> KeyboardType.Uri
+            },
             autoCorrectEnabled = false,
         ),
         modifier = Modifier.fillMaxWidth(),

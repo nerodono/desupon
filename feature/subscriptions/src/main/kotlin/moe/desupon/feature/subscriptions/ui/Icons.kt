@@ -66,6 +66,57 @@ internal object SubsIcons {
         }
     }
 
+    /** A provider feed: what a subscription is. */
+    val Feed: ImageVector by lazy {
+        stroke("Feed") {
+            moveTo(5f, 11f)
+            arcToRelative(8f, 8f, 0f, isMoreThanHalf = false, isPositiveArc = true, dx1 = 8f, dy1 = 8f)
+            moveTo(5f, 5f)
+            arcToRelative(14f, 14f, 0f, isMoreThanHalf = false, isPositiveArc = true, dx1 = 14f, dy1 = 14f)
+            moveTo(6f, 18f); lineTo(6f, 18.01f)
+        }
+    }
+
+    /** One server's key: what a config is. */
+    val Key: ImageVector by lazy {
+        stroke("Key") {
+            moveTo(12f, 15f)
+            arcToRelative(4f, 4f, 0f, isMoreThanHalf = true, isPositiveArc = true, dx1 = -8f, dy1 = 0f)
+            arcToRelative(4f, 4f, 0f, isMoreThanHalf = true, isPositiveArc = true, dx1 = 8f, dy1 = 0f)
+            moveTo(10.9f, 12.1f); lineTo(19f, 4f)
+            moveTo(16f, 7f); lineTo(18.5f, 9.5f)
+            moveTo(13.5f, 9.5f); lineTo(15.5f, 11.5f)
+        }
+    }
+
+    /** A pasted list of servers. */
+    val Lines: ImageVector by lazy {
+        stroke("Lines") {
+            moveTo(9f, 6f); horizontalLineTo(20f)
+            moveTo(9f, 12f); horizontalLineTo(20f)
+            moveTo(9f, 18f); horizontalLineTo(20f)
+            moveTo(4.5f, 6f); lineTo(4.5f, 6.01f)
+            moveTo(4.5f, 12f); lineTo(4.5f, 12.01f)
+            moveTo(4.5f, 18f); lineTo(4.5f, 18.01f)
+        }
+    }
+
+    val Delete: ImageVector by lazy {
+        stroke("Delete") {
+            moveTo(4f, 7f); horizontalLineTo(20f)
+            moveTo(9f, 7f); verticalLineTo(4f); horizontalLineTo(15f); verticalLineTo(7f)
+            moveTo(6f, 7f); lineTo(7f, 20f); horizontalLineTo(17f); lineTo(18f, 7f)
+        }
+    }
+
+    /** Start picking items. */
+    val Select: ImageVector by lazy {
+        stroke("Select") {
+            moveTo(4f, 4f); horizontalLineTo(20f); verticalLineTo(20f); horizontalLineTo(4f); close()
+            moveTo(8f, 12f); lineTo(11f, 15f); lineTo(16f, 9f)
+        }
+    }
+
     val More: ImageVector by lazy {
         ImageVector.Builder("More", 24.dp, 24.dp, 24f, 24f).apply {
             for (y in listOf(5f, 12f, 19f)) {

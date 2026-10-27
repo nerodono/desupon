@@ -129,10 +129,11 @@ class ConfigEditorViewModel internal constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
 
-    fun openNew() {
+    /** A new config; non-blank [text] opens it in text mode with that text, else on the protocol picker. */
+    fun openNew(text: String = "") {
         loadJob?.cancel()
         _target.value = ConfigTarget.New
-        _draft.value = ConfigDraft.new()
+        _draft.value = if (text.isBlank()) ConfigDraft.new() else ConfigDraft.fromText(text.trim())
     }
 
     /** Re-opening the config already shown keeps its unsaved edits. */

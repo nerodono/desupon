@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import moe.desupon.model.node.Node
 import moe.desupon.parser.SkipReason
 import moe.desupon.parser.internal.Candidate
 import moe.desupon.parser.internal.Chain
@@ -64,7 +65,7 @@ internal object SingBoxFormat {
                 type in NON_PROXY -> Entry.Nodes(emptyList())
                 type !in PROXY_TYPES -> Entry.Skip(type, SkipReason.UNKNOWN_SCHEME)
                 // A lone outbound has nothing to resolve its detour against; Normalizer reports it.
-                single -> entry(type) { listOf(outbound(o, type, keepDetour = true)) }
+                single -> entry(type) { listOf(withChain(outbound(o, type, keepDetour = true))) }
                 else -> entry(type) {
                     listOf(Chain.resolve(outbound(o, type), o.str("tag"), o.str("detour")) { tag -> byTag[tag]?.let(::hop) })
                 }
@@ -80,6 +81,19 @@ internal object SingBoxFormat {
     }
 
     private val GROUPS = setOf("selector", "urltest", "fallback", "failover", "loadbalance")
+
+    /** A node saved as outbound JSON keeps its dialer hops under [Node.CHAIN_KEY]; they are part of its identity. */
+    private fun withChain(c: Candidate): Candidate {
+        val hops = c.outbound[Node.CHAIN_KEY] ?: return c
+        val list = hops.asArr() ?: malformed("chain is not a list")
+        if (list.size > Chain.MAX_HOPS) malformed("chain longer than ${Chain.MAX_HOPS}")
+        val chain = list.map { el ->
+            val hop = el.asObj() ?: malformed("chain hop is not an object")
+            if (hop.str("type")?.lowercase() !in PROXY_TYPES) malformed("chain hop is not a proxy")
+            Candidate(hop.without("tag").without("detour"), null)
+        }
+        return c.copy(outbound = c.outbound.without(Node.CHAIN_KEY), chain = chain)
+    }
 
     private fun outbound(o0: JsonObject, type: String, keepDetour: Boolean = false): Candidate {
         val o = if (keepDetour) o0 else o0.without("detour")

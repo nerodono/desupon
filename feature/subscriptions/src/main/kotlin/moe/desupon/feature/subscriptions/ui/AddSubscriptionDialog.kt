@@ -62,6 +62,8 @@ internal fun AddDialog(
     onSwitch: () -> Unit,
     onManual: () -> Unit,
     onDismiss: () -> Unit,
+    /** The answer to [AddDraft.bulk]: true keeps the configs as one list. */
+    onBulk: (Boolean) -> Unit = {},
 ) {
     val config = draft.target == AddTarget.CONFIG
     val context = LocalContext.current
@@ -106,7 +108,22 @@ internal fun AddDialog(
                 )
                 draft.switchTo?.let { to ->
                     FilledTonalButton(onClick = onSwitch, enabled = !draft.submitting) {
-                        Text(stringResource(if (to == AddTarget.CONFIG) R.string.subs_add_switch_to_configs else R.string.subs_add_switch_to_subscription))
+                        Text(
+                            stringResource(
+                                when {
+                                    draft.switchAll -> R.string.subs_add_switch_all
+                                    to == AddTarget.CONFIG -> R.string.subs_add_switch_to_configs
+                                    else -> R.string.subs_add_switch_to_subscription
+                                },
+                            ),
+                        )
+                    }
+                }
+                draft.bulk?.let { count ->
+                    Text(stringResource(R.string.subs_bulk_question, count), style = MaterialTheme.typography.bodyMedium)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        FilledTonalButton(onClick = { onBulk(true) }, enabled = !draft.submitting) { Text(stringResource(R.string.subs_bulk_list)) }
+                        OutlinedButton(onClick = { onBulk(false) }, enabled = !draft.submitting) { Text(stringResource(R.string.subs_bulk_separate)) }
                     }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -131,7 +148,7 @@ internal fun AddDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onSubmit, enabled = !draft.submitting && draft.text.isNotBlank()) {
+            TextButton(onClick = onSubmit, enabled = !draft.submitting && draft.text.isNotBlank() && draft.bulk == null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (draft.submitting) {
                         CircularProgressIndicator(

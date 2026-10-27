@@ -43,9 +43,9 @@ internal fun ConfirmDialog(
 }
 
 @Composable
-internal fun DeleteDialog(title: String, onConfirm: () -> Unit, onDismiss: () -> Unit) = ConfirmDialog(
-    title = stringResource(R.string.subs_delete_title),
-    text = stringResource(R.string.subs_delete_text, title),
+internal fun DeleteDialog(title: String, onConfirm: () -> Unit, onDismiss: () -> Unit, list: Boolean = false) = ConfirmDialog(
+    title = stringResource(if (list) R.string.subs_list_delete_title else R.string.subs_delete_title),
+    text = stringResource(if (list) R.string.subs_list_delete_text else R.string.subs_delete_text, title),
     confirm = stringResource(R.string.subs_delete),
     onConfirm = onConfirm,
     onDismiss = onDismiss,

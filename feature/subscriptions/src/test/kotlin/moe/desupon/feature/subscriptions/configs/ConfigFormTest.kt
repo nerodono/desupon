@@ -162,7 +162,8 @@ class ConfigFormTest {
     fun `field rules`() {
         fun err(form: ConfigForm, field: Field) = form.validate().errors[field]
         val vless = ConfigForm.blank(FormProtocol.VLESS).set(Field.SERVER, "v.example.com").set(Field.SNI, "a.example.org")
-        assertEquals(UiText.Res(R.string.subs_form_error_uuid), err(vless.set(Field.UUID, "not-a-uuid"), Field.UUID))
+        assertEquals(UiText.Res(R.string.subs_form_error_required), err(vless.set(Field.UUID, " "), Field.UUID))
+        assertNull(err(vless.set(Field.UUID, "not-a-uuid"), Field.UUID))
         assertEquals(UiText.Res(R.string.subs_form_error_reality_key), err(vless.set(Field.REALITY_KEY, "c2hvcnQ"), Field.REALITY_KEY))
         assertEquals(UiText.Res(R.string.subs_form_error_short_id), err(vless.set(Field.REALITY_SID, "abc"), Field.REALITY_SID))
         assertEquals(UiText.Res(R.string.subs_form_error_short_id), err(vless.set(Field.REALITY_SID, "zz"), Field.REALITY_SID))
@@ -195,6 +196,36 @@ class ConfigFormTest {
         val vmess = ConfigForm.blank(FormProtocol.VMESS).set(Field.SERVER, "m.example.com").set(Field.UUID, uuid)
         assertEquals(UiText.Res(R.string.subs_form_error_alter_id), err(vmess.set(Field.ALTER_ID, "-1"), Field.ALTER_ID))
         assertNull(vmess.set(Field.ALTER_ID, "0").toOutbound()["alter_id"])
+    }
+
+    @Test
+    fun `a VLESS or VMess id that is not a UUID warns but saves, TUIC refuses it`() {
+        val warning = UiText.Res(R.string.subs_form_warning_custom_id)
+        for (p in listOf(FormProtocol.VLESS, FormProtocol.VMESS)) {
+            val f = ConfigForm.blank(p).set(Field.SERVER, "v.example.com").set(Field.SNI, "a.example.org").set(Field.UUID, "my-user")
+            assertNull(f.validate().errors[Field.UUID], p.name)
+            assertEquals(warning, f.warnings()[Field.UUID], p.name)
+            assertNull(f.set(Field.UUID, uuid).warnings()[Field.UUID], p.name)
+        }
+        val custom = formOf("vless://my-user@c.example.com:443?security=tls&sni=c.example.com#C")
+        assertEquals(warning, custom.warnings()[Field.UUID])
+        assertEquals(emptyMap(), custom.validate().errors)
+
+        val tuic = ConfigForm.blank(FormProtocol.TUIC).set(Field.SERVER, "t.example.com").set(Field.PASSWORD, "pw").set(Field.UUID, "my-user")
+        assertEquals(UiText.Res(R.string.subs_form_error_uuid), tuic.validate().errors[Field.UUID])
+        assertNull(tuic.warnings()[Field.UUID])
+    }
+
+    @Test
+    fun `gecko sizes are checked against the core's defaults for blank fields`() {
+        val gecko = ConfigForm.blank(FormProtocol.HYSTERIA2).set(Field.SERVER, "h.example.com").set(Field.PASSWORD, "pw")
+            .set(Field.OBFS, ConfigForm.GECKO).set(Field.OBFS_PASSWORD, "op")
+        val effective = UiText.Res(R.string.subs_form_error_packet_effective, listOf(512, 1200))
+        assertEquals(effective, gecko.set(Field.GECKO_MIN, "1300").validate().errors[Field.GECKO_MIN])
+        assertEquals(effective, gecko.set(Field.GECKO_MAX, "400").validate().errors[Field.GECKO_MAX])
+        assertEquals(emptyMap(), gecko.set(Field.GECKO_MIN, "300").validate().errors)
+        assertEquals(emptyMap(), gecko.set(Field.GECKO_MAX, "1400").validate().errors)
+        assertEquals(emptyMap(), gecko.validate().errors)
     }
 
     @Test

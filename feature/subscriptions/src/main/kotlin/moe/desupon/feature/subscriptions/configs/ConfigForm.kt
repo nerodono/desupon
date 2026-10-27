@@ -180,8 +180,14 @@ internal data class ConfigForm(
         if (Field.FLOW in shown && this[Field.FLOW] == VISION && (this[Field.SECURITY] == NONE || this[Field.TRANSPORT] != TCP)) {
             out.putIfAbsent(Field.FLOW, UiText.Res(R.string.subs_form_error_vision))
         }
+        if (Field.GECKO_MAX in shown && Field.GECKO_MIN !in out && Field.GECKO_MAX !in out) {
+            FieldRules.geckoRange(this)?.let { (field, error) -> out[field] = error }
+        }
         return copy(errors = out)
     }
+
+    /** Advice that does not block saving, per shown field. */
+    fun warnings(): Map<Field, UiText> = fields().mapNotNull { f -> FieldRules.warning(this, f)?.let { f to it } }.toMap()
 
     fun toText(): String = ConfigParser.outboundText(toOutbound(), name)
 
@@ -508,7 +514,8 @@ internal object FieldRules {
             Field.PORT -> if (value.toIntOrNull() !in 1..65535) UiText.Res(R.string.subs_form_error_port) else null
             Field.UUID -> when {
                 value.isEmpty() -> required()
-                !UUID.matches(value) -> UiText.Res(R.string.subs_form_error_uuid)
+                // TUIC needs a real UUID; VLESS and VMess map any other string to one, see [warning].
+                form.protocol == FormProtocol.TUIC && !UUID.matches(value) -> UiText.Res(R.string.subs_form_error_uuid)
                 else -> null
             }
             Field.PASSWORD -> when {
@@ -526,7 +533,7 @@ internal object FieldRules {
             Field.SNI -> if (form[Field.SECURITY] == ConfigForm.REALITY && value.isEmpty()) required() else null
             Field.ALTER_ID -> if (value.isNotEmpty() && (value.toIntOrNull() ?: -1) < 0) UiText.Res(R.string.subs_form_error_alter_id) else null
             Field.UP_MBPS, Field.DOWN_MBPS -> if (value.isNotEmpty() && (value.toIntOrNull() ?: 0) <= 0) UiText.Res(R.string.subs_form_error_number) else null
-            Field.GECKO_MIN, Field.GECKO_MAX -> gecko(form, field, value)
+            Field.GECKO_MIN, Field.GECKO_MAX -> gecko(value)
             Field.HOP_PORTS -> if (Ports.ranges(value) == null) UiText.Res(R.string.subs_form_error_ports) else null
             Field.HOP_INTERVAL -> if (value.isNotEmpty() && (seconds(value) ?: 0.0) < 5.0) UiText.Res(R.string.subs_form_error_hop_interval) else null
             Field.OBFS_PASSWORD -> if (form[field].isEmpty()) required() else null
@@ -537,13 +544,32 @@ internal object FieldRules {
 
     private fun required() = UiText.Res(R.string.subs_form_error_required)
 
-    private fun gecko(form: ConfigForm, field: Field, value: String): UiText? {
+    private fun gecko(value: String): UiText? {
         if (value.isEmpty()) return null
         val n = value.toIntOrNull()
-        if (n == null || n !in 1..GECKO_MAX_PACKET) return UiText.Res(R.string.subs_form_error_packet_size, listOf(GECKO_MAX_PACKET))
-        val min = form[Field.GECKO_MIN].trim().toIntOrNull()
-        val max = form[Field.GECKO_MAX].trim().toIntOrNull()
-        return if (field == Field.GECKO_MAX && min != null && max != null && min > max) UiText.Res(R.string.subs_form_error_packet_range) else null
+        return if (n == null || n !in 1..GECKO_MAX_PACKET) UiText.Res(R.string.subs_form_error_packet_size, listOf(GECKO_MAX_PACKET)) else null
+    }
+
+    /** The core fills blank sizes with its defaults and refuses min above max; the error goes on the field the user filled. */
+    fun geckoRange(form: ConfigForm): Pair<Field, UiText>? {
+        val minText = form[Field.GECKO_MIN].trim()
+        val maxText = form[Field.GECKO_MAX].trim()
+        val min = minText.toIntOrNull() ?: GECKO_DEFAULT_MIN
+        val max = maxText.toIntOrNull() ?: GECKO_DEFAULT_MAX
+        if (min <= max) return null
+        val error = if (minText.isNotEmpty() && maxText.isNotEmpty()) {
+            UiText.Res(R.string.subs_form_error_packet_range)
+        } else {
+            UiText.Res(R.string.subs_form_error_packet_effective, listOf(GECKO_DEFAULT_MIN, GECKO_DEFAULT_MAX))
+        }
+        return (if (maxText.isNotEmpty()) Field.GECKO_MAX else Field.GECKO_MIN) to error
+    }
+
+    /** A VLESS or VMess id that is not a UUID works only when the server uses the same string. */
+    fun warning(form: ConfigForm, field: Field): UiText? {
+        if (field != Field.UUID || form.protocol == FormProtocol.TUIC) return null
+        val value = form[field].trim()
+        return if (value.isNotEmpty() && !UUID.matches(value)) UiText.Res(R.string.subs_form_warning_custom_id) else null
     }
 
     /** Shadowsocks 2022 takes base64 keys of the method's size, `iPSK:uPSK` for multi-user servers. */
@@ -575,6 +601,8 @@ internal object FieldRules {
     }
 
     private const val GECKO_MAX_PACKET = 2048
+    private const val GECKO_DEFAULT_MIN = 512
+    private const val GECKO_DEFAULT_MAX = 1200
 }
 
 /** Base64 in either alphabet, padded or not. */

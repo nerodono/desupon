@@ -1,5 +1,6 @@
 package moe.desupon.feature.subscriptions
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,11 +11,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
@@ -35,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -104,7 +108,7 @@ fun SubscriptionsScreen(
             viewModel = configViewModel,
             onDelete = {
                 configViewModel.close()
-                viewModel.delete(it, config = true)
+                viewModel.delete(it)
             },
             modifier = modifier,
         )
@@ -131,11 +135,12 @@ fun SubscriptionsScreen(
             draft = d,
             onTextChange = viewModel::editAdd,
             onError = viewModel::addError,
-            onSubmit = viewModel::submitAdd,
+            onSubmit = { viewModel.submitAdd() },
+            onBulk = { asList -> viewModel.submitAdd(asList) },
             onSwitch = viewModel::switchAdd,
             onManual = {
                 viewModel.dismissAdd()
-                configViewModel.openNew()
+                configViewModel.openNew(d.text)
             },
             onDismiss = viewModel::dismissAdd,
         )
@@ -160,8 +165,12 @@ private fun Tabs(
     val resources = LocalResources.current
     var deleteItem by remember { mutableStateOf<SubscriptionItem?>(null) }
     var deleteConfig by remember { mutableStateOf<ConfigItem?>(null) }
+    var deleteSelected by remember { mutableStateOf(false) }
     var deleteSet by remember { mutableStateOf<SetCard?>(null) }
     var qrText by remember { mutableStateOf<String?>(null) }
+    val selecting = tab == SubscriptionsTab.CONFIGS && state.selected != null
+
+    BackHandler(enabled = selecting, onBack = viewModel::endSelection)
 
     LaunchedEffect(viewModel) { viewModel.messages.collect { snackbar.showSnackbar(it.resolve(context)) } }
     LaunchedEffect(setsViewModel) { setsViewModel.messages.collect { snackbar.showSnackbar(it.resolve(context)) } }
@@ -180,10 +189,37 @@ private fun Tabs(
         modifier = modifier,
         topBar = {
             Column {
-                TopAppBar(
-                    title = { Text(stringResource(R.string.subs_title)) },
-                    actions = { if (tab == SubscriptionsTab.SUBSCRIPTIONS) UpdateAllButton(state, viewModel::updateAll) },
-                )
+                if (selecting) {
+                    val count = state.selected.orEmpty().size
+                    TopAppBar(
+                        navigationIcon = {
+                            IconButton(onClick = viewModel::endSelection) {
+                                Icon(SubsIcons.Close, contentDescription = stringResource(R.string.subs_select_done_cd))
+                            }
+                        },
+                        title = { Text(stringResource(R.string.subs_selected_count, count)) },
+                        actions = {
+                            IconButton(onClick = { deleteSelected = true }, enabled = count > 0) {
+                                Icon(SubsIcons.Delete, contentDescription = stringResource(R.string.subs_delete_selected_cd))
+                            }
+                        },
+                    )
+                } else {
+                    TopAppBar(
+                        title = { Text(stringResource(R.string.subs_title)) },
+                        actions = {
+                            when (tab) {
+                                SubscriptionsTab.SUBSCRIPTIONS -> UpdateAllButton(state, viewModel::updateAll)
+                                SubscriptionsTab.CONFIGS -> if (state.configs.isNotEmpty()) {
+                                    IconButton(onClick = { viewModel.startSelection() }) {
+                                        Icon(SubsIcons.Select, contentDescription = stringResource(R.string.subs_select_cd))
+                                    }
+                                }
+                                SubscriptionsTab.SETS -> Unit
+                            }
+                        },
+                    )
+                }
                 PrimaryTabRow(selectedTabIndex = tab.ordinal) {
                     SubscriptionsTab.entries.forEach { t ->
                         Tab(
@@ -196,18 +232,19 @@ private fun Tabs(
             }
         },
         floatingActionButton = {
-            when (tab) {
-                SubscriptionsTab.SUBSCRIPTIONS -> ExtendedFloatingActionButton(
+            when {
+                selecting -> Unit
+                tab == SubscriptionsTab.SUBSCRIPTIONS -> ExtendedFloatingActionButton(
                     onClick = { viewModel.openAdd(AddTarget.SUBSCRIPTION) },
                     icon = { Icon(SubsIcons.Add, contentDescription = null) },
                     text = { Text(stringResource(R.string.subs_add)) },
                 )
-                SubscriptionsTab.CONFIGS -> ExtendedFloatingActionButton(
+                tab == SubscriptionsTab.CONFIGS -> ExtendedFloatingActionButton(
                     onClick = { viewModel.openAdd(AddTarget.CONFIG) },
                     icon = { Icon(SubsIcons.Add, contentDescription = null) },
                     text = { Text(stringResource(R.string.subs_add)) },
                 )
-                SubscriptionsTab.SETS -> ExtendedFloatingActionButton(
+                else -> ExtendedFloatingActionButton(
                     onClick = setsViewModel::newSet,
                     icon = { Icon(SubsIcons.Add, contentDescription = null) },
                     text = { Text(stringResource(R.string.subs_sets_new)) },
@@ -230,19 +267,17 @@ private fun Tabs(
                     hint = stringResource(R.string.subs_empty_hint),
                     modifier = Modifier.padding(padding),
                 )
-                else -> {
-                    val byId = remember(state.items) { state.items.associateBy { it.id } }
-                    PriorityList(state.chain, state.items.map { it.id }, state.activeStep, configs = false, listPadding, viewModel::chain) { sub, row, current ->
-                        val item = byId[sub] ?: return@PriorityList
-                        val actions = CardActions(
-                            onOpen = { onOpen(item.id) },
-                            onUpdate = { viewModel.update(item.id) },
-                            onDelete = { deleteItem = item },
-                            onChain = viewModel::chain,
-                        )
-                        SubscriptionCard(item = item, actions = actions, chain = row, current = current)
-                    }
-                }
+                else -> AnyCardList(
+                    state = state,
+                    own = state.items.map { it.id },
+                    configs = false,
+                    contentPadding = listPadding,
+                    viewModel = viewModel,
+                    onOpen = onOpen,
+                    onOpenConfig = onOpenConfig,
+                    onDelete = { deleteItem = it },
+                    onDeleteConfig = { deleteConfig = it },
+                )
             }
             SubscriptionsTab.CONFIGS -> when {
                 state.loading -> Loading(padding)
@@ -251,20 +286,18 @@ private fun Tabs(
                     hint = stringResource(R.string.subs_configs_empty_hint),
                     modifier = Modifier.padding(padding),
                 )
-                else -> {
-                    val byId = remember(state.configs) { state.configs.associateBy { it.id } }
-                    PriorityList(state.configChain, state.configs.map { it.id }, state.activeStep, configs = true, listPadding, viewModel::configChain) { sub, row, current ->
-                        val item = byId[sub] ?: return@PriorityList
-                        val actions = ConfigActions(
-                            onOpen = { onOpenConfig(item) },
-                            onCopy = { viewModel.copyConfig(item.id) },
-                            onQr = { viewModel.showConfigQr(item.id) },
-                            onDelete = { deleteConfig = item },
-                            onChain = viewModel::configChain,
-                        )
-                        ConfigCard(item = item, actions = actions, chain = row, current = current)
-                    }
-                }
+                selecting -> SelectionList(state.configs, state.selected.orEmpty(), listPadding, viewModel::toggleSelected)
+                else -> AnyCardList(
+                    state = state,
+                    own = state.configs.map { it.id },
+                    configs = true,
+                    contentPadding = listPadding,
+                    viewModel = viewModel,
+                    onOpen = onOpen,
+                    onOpenConfig = onOpenConfig,
+                    onDelete = { deleteItem = it },
+                    onDeleteConfig = { deleteConfig = it },
+                )
             }
             SubscriptionsTab.SETS -> SetsTab(
                 state = sets,
@@ -292,15 +325,30 @@ private fun Tabs(
 
     deleteConfig?.let { item ->
         ConfirmDialog(
-            title = stringResource(R.string.subs_config_delete_title),
-            text = stringResource(R.string.subs_config_delete_text, item.displayTitle()),
+            title = stringResource(if (item.isList) R.string.subs_list_delete_title else R.string.subs_config_delete_title),
+            text = stringResource(if (item.isList) R.string.subs_list_delete_text else R.string.subs_config_delete_text, item.displayTitle()),
             confirm = stringResource(R.string.subs_delete),
             destructive = true,
             onConfirm = {
-                viewModel.delete(item.id, config = true)
+                viewModel.delete(item.id)
                 deleteConfig = null
             },
             onDismiss = { deleteConfig = null },
+        )
+    }
+
+    if (deleteSelected) {
+        val count = state.selected.orEmpty().size
+        ConfirmDialog(
+            title = stringResource(R.string.subs_delete_selected_title),
+            text = pluralStringResource(R.plurals.subs_delete_selected_text, count, count),
+            confirm = stringResource(R.string.subs_delete),
+            destructive = true,
+            onConfirm = {
+                viewModel.deleteSelected()
+                deleteSelected = false
+            },
+            onDismiss = { deleteSelected = false },
         )
     }
 
@@ -349,6 +397,64 @@ private fun SubscriptionsTab.label(): Int = when (this) {
 @Composable
 private fun Loading(padding: PaddingValues) {
     Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+}
+
+/**
+ * One tab's list: the whole priority chain of [SetId.ALL] (subscriptions and configs alike, numbered as the brain tries
+ * them), then this tab's [own] members outside it.
+ */
+@Composable
+private fun AnyCardList(
+    state: SubscriptionsUiState,
+    own: List<SubId>,
+    configs: Boolean,
+    contentPadding: PaddingValues,
+    viewModel: SubscriptionsViewModel,
+    onOpen: (SubId) -> Unit,
+    onOpenConfig: (ConfigItem) -> Unit,
+    onDelete: (SubscriptionItem) -> Unit,
+    onDeleteConfig: (ConfigItem) -> Unit,
+) {
+    val items = remember(state.items) { state.items.associateBy { it.id } }
+    val configItems = remember(state.configs) { state.configs.associateBy { it.id } }
+    val members = remember(state.chain, own) { (state.chain + own).distinct() }
+    PriorityList(state.chain, members, state.activeStep, configs, contentPadding, viewModel::chain) { sub, row, current ->
+        items[sub]?.let { item ->
+            val actions = CardActions(
+                onOpen = { onOpen(item.id) },
+                onUpdate = { viewModel.update(item.id) },
+                onDelete = { onDelete(item) },
+                onChain = viewModel::chain,
+            )
+            SubscriptionCard(item = item, actions = actions, chain = row, current = current)
+        }
+        configItems[sub]?.let { item ->
+            val actions = ConfigActions(
+                onOpen = { onOpenConfig(item) },
+                onCopy = { viewModel.copyConfig(item.id) },
+                onQr = { viewModel.showConfigQr(item.id) },
+                onDelete = { onDeleteConfig(item) },
+                onChain = viewModel::chain,
+                onSelect = { viewModel.startSelection(item.id) },
+            )
+            ConfigCard(item = item, actions = actions, chain = row, current = current)
+        }
+    }
+}
+
+/** Configs and lists with checkboxes, for deleting several at once. */
+@Composable
+private fun SelectionList(configs: List<ConfigItem>, selected: Set<SubId>, contentPadding: PaddingValues, onToggle: (SubId) -> Unit) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = contentPadding,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(configs, key = { it.id.value }) { item ->
+            val noop = ConfigActions(onOpen = {}, onCopy = {}, onQr = {}, onDelete = {})
+            ConfigCard(item = item, actions = noop, selected = item.id in selected, onToggle = { onToggle(item.id) })
+        }
+    }
 }
 
 /** [members] in one list: the priority box of [SetId.ALL] first, then the rest; [card] renders one member. */

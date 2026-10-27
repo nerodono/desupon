@@ -16,4 +16,5 @@ val subscriptionsModule = module {
     viewModel { SetsViewModel(get(), get()) }
     viewModel { SubscriptionEditorViewModel(get(), get(), get(), getOrNull<Clock>() ?: AndroidClock) }
     viewModel { ConfigEditorViewModel(get(), get(), get()) }
+    viewModel { SimpleImportViewModel(get(), get()) }
 }

@@ -36,11 +36,14 @@ internal data class ConfigDraft(
 
     val dirty: Boolean get() = sets != initialSets || if (isNew) output.isNotBlank() || form != null else contentChanged
 
-    /** The config itself changed, not just its sets. */
+    /** The config itself changed, not just its sets; compared as written, so a form rebuilt from its own text is unchanged. */
     val contentChanged: Boolean
-        get() = when (mode) {
-            ConfigMode.FORM -> form != initialForm
-            ConfigMode.TEXT -> text.trim() != initialText.trim() && text.trim() != initialForm?.toText()?.trim()
+        get() {
+            val opened = initialForm?.toText()?.trim()
+            return when (mode) {
+                ConfigMode.FORM -> form?.toText()?.trim().let { it != opened && it != initialText.trim() }
+                ConfigMode.TEXT -> text.trim() != initialText.trim() && text.trim() != opened
+            }
         }
 
     fun text(value: String) = copy(text = value, error = null, formNote = null)
@@ -83,6 +86,8 @@ internal data class ConfigDraft(
      * A form must also read back as exactly one runnable node, so it never saves something the core would refuse.
      */
     fun validate(): ConfigDraft {
+        // A saved config whose content is untouched is not re-checked, so changing only its sets always works.
+        if (!isNew && !contentChanged) return copy(error = null)
         if (mode == ConfigMode.TEXT) return if (text.isBlank()) copy(error = UiText.Res(R.string.subs_config_error_empty)) else copy(error = null)
         val f = form ?: return copy(error = UiText.Res(R.string.subs_config_form_pick_protocol))
         val checked = f.validate()
@@ -108,6 +113,9 @@ internal data class ConfigDraft(
             sets = emptySet(),
             initialSets = emptySet(),
         )
+
+        /** A new config starting from pasted [text], in TEXT mode so nothing in it is reinterpreted. */
+        fun fromText(text: String): ConfigDraft = new().copy(mode = ConfigMode.TEXT, text = text)
 
         /** Opens in FORM mode when the form can show [text]. */
         fun of(id: SubId, text: String, sets: Set<SetId>): ConfigDraft {

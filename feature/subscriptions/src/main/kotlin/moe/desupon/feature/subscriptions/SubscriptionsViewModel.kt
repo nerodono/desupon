@@ -2,6 +2,7 @@ package moe.desupon.feature.subscriptions
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -81,13 +83,13 @@ internal data class SubscriptionsUiState(
     val loading: Boolean = true,
     val items: List<SubscriptionItem> = emptyList(),
     val updatingAll: Boolean = false,
-    /** Priority chain of [SetId.ALL], limited to [items]. */
+    /** Priority chain of [SetId.ALL]: subscriptions and configs, one order for both tabs. */
     val chain: List<SubId> = emptyList(),
     /** Chain step in use, only while [SetId.ALL] is the active set. */
     val activeStep: ChainStep? = null,
     val configs: List<ConfigItem> = emptyList(),
-    /** Priority chain of [SetId.ALL], limited to [configs]. */
-    val configChain: List<SubId> = emptyList(),
+    /** Configs picked for deletion on the configs tab; null outside selection. */
+    val selected: Set<SubId>? = null,
 )
 
 internal data class ConfigShare(val text: String, val qr: Boolean)
@@ -99,6 +101,10 @@ internal data class AddDraft(
     val error: UiText? = null,
     /** The text belongs to the other dialog; the error offers to move it there. */
     val switchTo: AddTarget? = null,
+    /** The text mixes subscriptions and configs; switching adds both. */
+    val switchAll: Boolean = false,
+    /** So many configs that the dialog asks whether to keep them as one list; null until asked. */
+    val bulk: Int? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -155,20 +161,22 @@ class SubscriptionsViewModel internal constructor(
         }
         val configs = local.map { e -> e.toConfig(nodesOf[e.info.id].orEmpty(), reasons, setNames(e)) }
         val chain = sets.firstOrNull { it.isAll }?.set?.chain.orEmpty()
-        val itemIds = items.mapTo(HashSet()) { it.id }
-        val configIds = configs.mapTo(HashSet()) { it.id }
+        val known = entries.mapTo(HashSet()) { it.info.id }
         SubscriptionsUiState(
             loading = false,
             items = items,
             updatingAll = all,
-            chain = chain.filter { it in itemIds },
+            chain = chain.filter { it in known },
             configs = configs,
-            configChain = chain.filter { it in configIds },
         )
-    }
+    }.flowOn(Dispatchers.Default)
 
-    internal val state: StateFlow<SubscriptionsUiState> = combine(list, allStep) { s, step -> s.copy(activeStep = step) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SubscriptionsUiState())
+    private val selected = MutableStateFlow<Set<SubId>?>(null)
+
+    internal val state: StateFlow<SubscriptionsUiState> = combine(list, allStep, selected) { s, step, picked ->
+        val ids = s.configs.mapTo(HashSet()) { it.id }
+        s.copy(activeStep = step, selected = picked?.filterTo(HashSet()) { it in ids })
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SubscriptionsUiState())
 
     init {
         viewModelScope.launch {
@@ -187,11 +195,11 @@ class SubscriptionsViewModel internal constructor(
     }
 
     fun editAdd(text: String) {
-        _draft.update { it?.copy(text = text, error = null, switchTo = null) }
+        _draft.update { it?.copy(text = text, error = null, switchTo = null, bulk = null) }
     }
 
     internal fun addError(error: UiText) {
-        _draft.update { it?.copy(error = error, switchTo = null) }
+        _draft.update { it?.copy(error = error, switchTo = null, bulk = null) }
     }
 
     /** Moves the text to the dialog the error pointed at. */
@@ -199,7 +207,7 @@ class SubscriptionsViewModel internal constructor(
         val d = _draft.value ?: return
         val to = d.switchTo ?: return
         if (d.submitting) return
-        _draft.value = d.copy(target = to, error = null, switchTo = null)
+        _draft.value = d.copy(target = to, error = null, switchTo = null, bulk = null)
         _tab.value = if (to == AddTarget.CONFIG) SubscriptionsTab.CONFIGS else SubscriptionsTab.SUBSCRIPTIONS
     }
 
@@ -207,7 +215,11 @@ class SubscriptionsViewModel internal constructor(
         if (_draft.value?.submitting != true) _draft.value = null
     }
 
-    fun submitAdd() {
+    /**
+     * Adds the dialog's text. Configs past [BULK_LIMIT] first ask whether to keep them as one list: [asList] is that
+     * answer, null before it was given.
+     */
+    fun submitAdd(asList: Boolean? = null) {
         val current = _draft.value ?: return
         if (current.submitting || current.text.isBlank()) return
         _draft.value = current.copy(submitting = true, error = null, switchTo = null)
@@ -215,7 +227,14 @@ class SubscriptionsViewModel internal constructor(
             val outcome = runCatching {
                 when (current.target) {
                     AddTarget.SUBSCRIPTION -> subscriptionOutcome(subscriptions.addSubscriptions(current.text))
-                    AddTarget.CONFIG -> configOutcome(subscriptions.importConfigs(current.text))
+                    AddTarget.CONFIG -> {
+                        val bulk = if (asList == null) subscriptions.preview(current.text).configs.takeIf { it > BULK_LIMIT } else null
+                        if (bulk != null) {
+                            AddOutcome.Ask(bulk)
+                        } else {
+                            configOutcome(subscriptions.importConfigs(current.text, asList = asList == true))
+                        }
+                    }
                 }
             }.getOrElse { AddOutcome.Error(UiText.Res(R.string.subs_error_unknown)) }
             when (outcome) {
@@ -223,28 +242,35 @@ class SubscriptionsViewModel internal constructor(
                     _draft.value = null
                     _messages.send(outcome.message)
                 }
-                is AddOutcome.Error -> _draft.update { it?.copy(submitting = false, error = outcome.message, switchTo = outcome.switchTo) }
+                is AddOutcome.Error -> _draft.update {
+                    it?.copy(submitting = false, error = outcome.message, switchTo = outcome.switchTo, switchAll = outcome.all)
+                }
+                is AddOutcome.Ask -> _draft.update { it?.copy(submitting = false, bulk = outcome.configs) }
             }
         }
     }
 
     private sealed interface AddOutcome {
-        val message: UiText
+        data class Done(val message: UiText) : AddOutcome
 
-        data class Done(override val message: UiText) : AddOutcome
+        data class Error(val message: UiText, val switchTo: AddTarget? = null, val all: Boolean = false) : AddOutcome
 
-        data class Error(override val message: UiText, val switchTo: AddTarget? = null) : AddOutcome
+        data class Ask(val configs: Int) : AddOutcome
     }
 
     private fun subscriptionOutcome(result: AddResult): AddOutcome = when (result) {
         is AddResult.Added -> AddOutcome.Done(Messages.add(result))
-        is AddResult.LooksLikeConfigs -> AddOutcome.Error(Messages.add(result), AddTarget.CONFIG)
+        is AddResult.LooksLikeConfigs -> AddOutcome.Error(Messages.add(result), AddTarget.CONFIG, all = result.urls > 0)
         AddResult.NothingFound, is AddResult.AlreadyExists -> AddOutcome.Error(Messages.add(result))
     }
 
     private fun configOutcome(result: ConfigImportResult): AddOutcome = when (result) {
-        is ConfigImportResult.Imported ->
-            if (result.ids.isEmpty()) AddOutcome.Error(Messages.configs(result)) else AddOutcome.Done(Messages.configs(result))
+        is ConfigImportResult.Imported -> if (result.ids.isEmpty() && result.subscriptions.isEmpty()) {
+            AddOutcome.Error(Messages.configs(result))
+        } else {
+            AddOutcome.Done(Messages.configs(result))
+        }
+        is ConfigImportResult.Listed -> AddOutcome.Done(Messages.configs(result))
         ConfigImportResult.SubscriptionUrls -> AddOutcome.Error(Messages.configs(result), AddTarget.SUBSCRIPTION)
         is ConfigImportResult.NothingFound -> AddOutcome.Error(Messages.configs(result))
     }
@@ -276,10 +302,42 @@ class SubscriptionsViewModel internal constructor(
         }
     }
 
-    fun delete(id: SubId, config: Boolean = false) {
+    /** The snackbar names what [id] was, a subscription, a pasted list or a config. */
+    fun delete(id: SubId) {
+        val s = state.value
+        val message = when {
+            s.items.any { it.id == id } -> R.string.subs_deleted
+            s.configs.firstOrNull { it.id == id }?.isList == true -> R.string.subs_list_deleted
+            s.configs.any { it.id == id } -> R.string.subs_config_deleted
+            else -> R.string.subs_deleted
+        }
         viewModelScope.launch {
             subscriptions.delete(id)
-            _messages.send(UiText.Res(if (config) R.string.subs_config_deleted else R.string.subs_deleted))
+            _messages.send(UiText.Res(message))
+        }
+    }
+
+    /** Starts picking configs for deletion, with [first] already picked. */
+    fun startSelection(first: SubId? = null) {
+        _tab.value = SubscriptionsTab.CONFIGS
+        selected.value = setOfNotNull(first)
+    }
+
+    fun toggleSelected(id: SubId) {
+        selected.update { picked -> picked?.let { if (id in it) it - id else it + id } }
+    }
+
+    fun endSelection() {
+        selected.value = null
+    }
+
+    fun deleteSelected() {
+        val ids = state.value.selected.orEmpty()
+        selected.value = null
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            subscriptions.delete(ids)
+            _messages.send(UiText.Plural(R.plurals.subs_configs_deleted, ids.size))
         }
     }
 
@@ -296,14 +354,10 @@ class SubscriptionsViewModel internal constructor(
         viewModelScope.launch { subscriptions.configSource(id)?.let { _shares.send(ConfigShare(it, qr)) } }
     }
 
-    /** Edits the priority chain of every subscription, as seen on the subscriptions tab. */
-    internal fun chain(op: ChainOp) = chainOf(op) { s -> s.items.mapTo(HashSet()) { it.id } }
-
-    /** Edits the same chain as seen on the configs tab. */
-    internal fun configChain(op: ChainOp) = chainOf(op) { s -> s.configs.mapTo(HashSet()) { it.id } }
-
-    private fun chainOf(op: ChainOp, visible: (SubscriptionsUiState) -> Set<SubId>) {
-        val shown = visible(state.value)
+    /** Edits the priority chain of [SetId.ALL], which both tabs show whole. */
+    internal fun chain(op: ChainOp) {
+        val s = state.value
+        val shown = s.items.mapTo(HashSet()) { it.id }.apply { s.configs.forEach { add(it.id) } }
         viewModelScope.launch {
             ChainList.toFull(op, selection.chain(SetId.ALL), shown)?.let { selection.apply(SetId.ALL, it) }
         }
@@ -311,6 +365,7 @@ class SubscriptionsViewModel internal constructor(
 
     fun selectTab(tab: SubscriptionsTab) {
         _tab.value = tab
+        if (tab != SubscriptionsTab.CONFIGS) selected.value = null
     }
 
     private fun SubscriptionEntry.toItem(unsupported: Int, updating: Boolean, nowMs: Long, setNames: List<String>): SubscriptionItem {
@@ -351,7 +406,10 @@ class SubscriptionsViewModel internal constructor(
         )
     }
 
-    private companion object {
-        const val STOP_TIMEOUT_MS = 5_000L
+    internal companion object {
+        private const val STOP_TIMEOUT_MS = 5_000L
+
+        /** More configs than this in one paste are offered as a single list. */
+        const val BULK_LIMIT = 5
     }
 }

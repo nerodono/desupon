@@ -33,6 +33,7 @@ import moe.desupon.feature.home.SimpleHomeScreen
 import moe.desupon.feature.settings.ConfigScreen
 import moe.desupon.feature.settings.SettingsScreen
 import moe.desupon.feature.settings.SplitTunnelScreen
+import moe.desupon.feature.subscriptions.SimpleImportPrompt
 import moe.desupon.feature.subscriptions.SubscriptionImportRequests
 import moe.desupon.feature.subscriptions.SubscriptionsScreen
 import moe.desupon.ui.theme.DesuponGlyphs
@@ -123,10 +124,11 @@ fun DesuponNav(requests: Flow<TopDestination>) {
     }
 }
 
-/** Simple mode's whole UI: no navigation, so only the screen's hidden exit leads anywhere else. */
+/** Simple mode's whole UI: no navigation, so only the screen's hidden exit leads anywhere else; shared links get a yes/no prompt. */
 @Composable
 fun SimpleModeRoot(onExit: () -> Unit) {
     Scaffold(contentWindowInsets = WindowInsets.safeDrawing) { padding ->
         SimpleHomeScreen(onExit = onExit, modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding))
+        SimpleImportPrompt()
     }
 }

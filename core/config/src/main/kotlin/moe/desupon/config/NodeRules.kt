@@ -190,6 +190,7 @@ internal object NodeRules {
             if (!flow.isNullOrEmpty() && flow != VISION) out += "unsupported flow"
         }
         if ((type == "tuic" || type == "juicity") && obj.string("uuid")?.let(UUID::matches) != true) out += "$type uuid is not a UUID"
+        if (type == "hysteria2") obj.obj("obfs")?.takeIf { it.string("type") == "gecko" }?.let { geckoViolation(it)?.let(out::add) }
         if (type == "shadowsocks") ss2022Violation(obj)?.let { out += it }
         if (type == "juicity" && obj.string("pinned_certchain_sha256")?.let { pin -> SHA256_PIN.none { it.matches(pin) } } == true) {
             out += "juicity pinned_certchain_sha256 is not a SHA-256"
@@ -226,6 +227,13 @@ internal object NodeRules {
             out += "domain_resolver missing"
         }
         return out
+    }
+
+    /** The core fills unset sizes with 512/1200 and refuses the outbound unless 0 < min <= max <= 2048. */
+    private fun geckoViolation(obfs: JsonObject): String? {
+        val min = obfs.int("min_packet_size")?.takeIf { it != 0 } ?: 512
+        val max = obfs.int("max_packet_size")?.takeIf { it != 0 } ?: 1200
+        return if (min <= 0 || min > max || max > 2048) "gecko packet size range" else null
     }
 
     private fun ss2022Violation(obj: JsonObject): String? {

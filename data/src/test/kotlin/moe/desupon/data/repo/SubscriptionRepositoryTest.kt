@@ -233,6 +233,44 @@ class SubscriptionRepositoryTest {
     }
 
     @Test
+    fun mixedTextAddsUrlsAsSubscriptionsAndTheRestAsConfigs() = runTest {
+        val text = "${url("/sub/1")}\n${Links.trojan("X")}\n${Links.trojan("Y")}"
+        assertEquals(ImportPreview(urls = 1, configs = 2), repo.preview(text))
+        assertEquals(AddResult.LooksLikeConfigs(configs = 2, urls = 1), repo.addSubscriptions(text))
+        assertTrue(repo.subscriptions.first().isEmpty())
+
+        server.enqueue(subResponse(Links.body("A")))
+        val r = assertIs<ConfigImportResult.Imported>(repo.importConfigs(text))
+        assertEquals(2, r.ids.size)
+        assertEquals(0, r.skipped)
+        assertIs<UpdateResult.Updated>(r.subscriptions.values.single())
+        val kinds = repo.subscriptions.first().map { it.kind }
+        assertEquals(1, kinds.count { it == SubscriptionKind.SUBSCRIPTION })
+        assertEquals(2, kinds.count { it == SubscriptionKind.CONFIG })
+        assertEquals(listOf("A", "X", "Y"), nodes.snapshot().map { it.displayName }.sorted())
+    }
+
+    @Test
+    fun configsCanBeSavedAsOneList() = runTest {
+        val body = Links.body("X", "Y", "Z")
+        val r = assertIs<ConfigImportResult.Listed>(repo.importConfigs(body, asList = true))
+        assertEquals(3, r.nodes)
+        val entry = repo.subscriptions.first().single()
+        assertEquals(SubscriptionKind.LIST, entry.kind)
+        assertEquals(r.id, entry.info.id)
+        assertEquals(body, repo.localText(r.id))
+        assertEquals(listOf("X", "Y", "Z"), nodes.snapshot().map { it.displayName })
+    }
+
+    @Test
+    fun severalRowsAreDeletedAtOnce() = runTest {
+        val r = assertIs<ConfigImportResult.Imported>(repo.importConfigs(Links.body("X", "Y", "Z")))
+        repo.delete(r.ids.take(2))
+        assertEquals(listOf("Z"), repo.subscriptions.first().map { it.info.title })
+        assertEquals(listOf("Z"), nodes.snapshot().map { it.displayName })
+    }
+
+    @Test
     fun pastedUrlsAreAddedAsSubscriptions() = runTest {
         server.enqueue(subResponse(Links.body("A")))
         server.enqueue(subResponse(Links.body("B")))

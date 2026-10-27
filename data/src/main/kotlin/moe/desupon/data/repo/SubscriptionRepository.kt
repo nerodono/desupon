@@ -22,6 +22,7 @@ import moe.desupon.data.fetch.FetchRequest
 import moe.desupon.data.fetch.FetchTrigger
 import moe.desupon.data.fetch.SubscriptionFetcher
 import moe.desupon.model.Secret
+import moe.desupon.model.node.NodeId
 import moe.desupon.model.selection.SetId
 import moe.desupon.model.subscription.SubId
 import moe.desupon.model.subscription.SubscriptionInfo
@@ -131,15 +132,34 @@ sealed interface AddResult {
 
     data class AlreadyExists(val id: SubId) : AddResult
 
-    /** Not subscription URLs but [configs] configs, which belong to [SubscriptionRepository.importConfigs]. */
-    data class LooksLikeConfigs(val configs: Int) : AddResult
+    /**
+     * Not only subscription URLs: [configs] configs, next to [urls] subscription URL lines when the text mixes both.
+     * [SubscriptionRepository.importConfigs] takes the whole text.
+     */
+    data class LooksLikeConfigs(val configs: Int, val urls: Int = 0) : AddResult
 
     data object NothingFound : AddResult
 }
 
+/** What pasted text holds before it is imported. */
+data class ImportPreview(val urls: Int, val configs: Int)
+
 sealed interface ConfigImportResult {
-    /** [duplicates] repeated a saved config or an earlier one in the text; [skipped] entries could not be read. */
-    data class Imported(val ids: List<SubId>, val nodes: Int, val duplicates: Int, val skipped: Int) : ConfigImportResult
+    /**
+     * [duplicates] repeated a saved config or an earlier one in the text; [skipped] entries could not be read.
+     * [subscriptions] were the text's subscription URL lines, added as subscriptions.
+     */
+    data class Imported(
+        val ids: List<SubId>,
+        val nodes: Int,
+        val duplicates: Int,
+        val skipped: Int,
+        val subscriptions: Map<SubId, UpdateResult> = emptyMap(),
+    ) : ConfigImportResult
+
+    /** The configs saved together as one pasted list, [id]. */
+    data class Listed(val id: SubId, val nodes: Int, val skipped: Int, val subscriptions: Map<SubId, UpdateResult> = emptyMap()) :
+        ConfigImportResult
 
     /** Every line is a subscription URL, which belongs to [SubscriptionRepository.addSubscriptions]. */
     data object SubscriptionUrls : ConfigImportResult
@@ -189,8 +209,8 @@ class SubscriptionRepository internal constructor(
         val lines = lines(text)
         if (lines.isEmpty()) return AddResult.NothingFound
         if (!lines.all(SubscriptionFetcher::isSubscriptionUrl)) {
-            val configs = withContext(Dispatchers.Default) { ConfigParser.split(text, PENDING_ID).configs.size }
-            return if (configs > 0) AddResult.LooksLikeConfigs(configs) else AddResult.NothingFound
+            val preview = preview(text)
+            return if (preview.configs > 0) AddResult.LooksLikeConfigs(preview.configs, preview.urls) else AddResult.NothingFound
         }
         val results = LinkedHashMap<SubId, UpdateResult>()
         for (line in lines) {
@@ -203,15 +223,25 @@ class SubscriptionRepository internal constructor(
         return AddResult.Added(results)
     }
 
+    /** Counts the subscription URL lines and the configs in [text], as [importConfigs] would split them. */
+    suspend fun preview(text: String): ImportPreview {
+        val (urls, rest) = lines(text).partition(SubscriptionFetcher::isSubscriptionUrl)
+        val configs = if (rest.isEmpty()) 0 else withContext(Dispatchers.Default) { ConfigParser.split(configText(text, urls), PENDING_ID).configs.size }
+        return ImportPreview(urls.size, configs)
+    }
+
     /**
-     * Saves every config in [text] as its own row: one per line of a link list, one per node of any other format.
-     * Configs whose nodes are all already saved as configs are skipped.
+     * Saves every config in [text] as its own row (one per line of a link list, one per node of any other format), or
+     * all of them as one pasted list when [asList]. Configs whose nodes are all already saved as configs are skipped.
+     * Subscription URL lines mixed into the text are added as subscriptions.
      */
-    suspend fun importConfigs(text: String): ConfigImportResult {
+    suspend fun importConfigs(text: String, asList: Boolean = false): ConfigImportResult {
         val lines = lines(text)
         if (lines.isEmpty()) return ConfigImportResult.NothingFound(ConfigError.Empty)
         if (lines.all(SubscriptionFetcher::isSubscriptionUrl)) return ConfigImportResult.SubscriptionUrls
-        val split = withContext(Dispatchers.Default) { ConfigParser.split(text, PENDING_ID) }
+        val urls = lines.filter(SubscriptionFetcher::isSubscriptionUrl)
+        val body = configText(text, urls)
+        val split = withContext(Dispatchers.Default) { ConfigParser.split(body, PENDING_ID) }
         if (split.configs.isEmpty()) {
             val error = when (split.skipped.size) {
                 0 -> ConfigError.NotAConfig
@@ -220,23 +250,44 @@ class SubscriptionRepository internal constructor(
             }
             return ConfigImportResult.NothingFound(error)
         }
-        val saved = configNodeIds()
-        val fresh = split.configs.filterNot { c -> c.nodes.all { it.id.hash in saved } }
         val now = clock.nowMs()
-        val ids = db.withTransaction {
-            fresh.map { c ->
-                val id = subs.insert(configRow(c.text, c.nodes.first().displayName, now))
-                nodes.replaceForSubscription(id, c.nodes.map { it.toEntity(c.unsupportedReasons[it.id]) })
-                SubId(id)
+        val result = if (asList) {
+            val nodeList = split.configs.flatMap { it.nodes }
+            val reasons = split.configs.fold(emptyMap<NodeId, String>()) { acc, c -> acc + c.unsupportedReasons }
+            val id = db.withTransaction {
+                val id = subs.insert(listRow(now, split.skipped.size))
+                nodes.replaceForSubscription(id, nodeList.map { it.toEntity(reasons[it.id]) })
+                id
             }
+            withContext(Dispatchers.IO) { runCatching { cache.write(SubId(id), body.toByteArray(Charsets.UTF_8)) } }
+            poolChanged()
+            ConfigImportResult.Listed(SubId(id), nodeList.size, split.skipped.size)
+        } else {
+            val saved = configNodeIds()
+            val fresh = split.configs.filterNot { c -> c.nodes.all { it.id.hash in saved } }
+            val ids = db.withTransaction {
+                fresh.map { c ->
+                    val id = subs.insert(configRow(c.text, c.nodes.first().displayName, now))
+                    nodes.replaceForSubscription(id, c.nodes.map { it.toEntity(c.unsupportedReasons[it.id]) })
+                    SubId(id)
+                }
+            }
+            if (ids.isNotEmpty()) poolChanged()
+            ConfigImportResult.Imported(
+                ids = ids,
+                nodes = fresh.sumOf { it.nodes.size },
+                duplicates = split.duplicates + split.configs.size - fresh.size,
+                skipped = split.skipped.size,
+            )
         }
-        if (ids.isNotEmpty()) poolChanged()
-        return ConfigImportResult.Imported(
-            ids = ids,
-            nodes = fresh.sumOf { it.nodes.size },
-            duplicates = split.duplicates + split.configs.size - fresh.size,
-            skipped = split.skipped.size,
-        )
+        if (urls.isEmpty()) return result
+        val added = LinkedHashMap<SubId, UpdateResult>()
+        for (url in urls) (addUrl(url) as? AddResult.Added)?.let { added += it.results }
+        return when (result) {
+            is ConfigImportResult.Imported -> result.copy(subscriptions = added)
+            is ConfigImportResult.Listed -> result.copy(subscriptions = added)
+            else -> result
+        }
     }
 
     /** Saves [source] as a new config; it must read as exactly one config. */
@@ -349,6 +400,17 @@ class SubscriptionRepository internal constructor(
         poolChanged()
     }
 
+    /** Deletes [ids] in one transaction. */
+    suspend fun delete(ids: Collection<SubId>) {
+        if (ids.isEmpty()) return
+        db.withTransaction {
+            for (id in ids) subs.delete(id.value)
+            nodes.deleteOrphans()
+        }
+        withContext(Dispatchers.IO) { for (id in ids) cache.delete(id) }
+        poolChanged()
+    }
+
     /** Null or blank restores the provider title. */
     suspend fun rename(id: SubId, name: String?) = edit(id) { it.copy(name = name?.trim()?.takeIf(String::isNotEmpty)) }
 
@@ -454,6 +516,24 @@ class SubscriptionRepository internal constructor(
         subs.findByUrl(distinct.first())?.takeIf { it.id != id.value }?.let { return UrlCheck.Bad(EditResult.DuplicateUrl(SubId(it.id))) }
         return UrlCheck.Ok(distinct)
     }
+
+    /** [text] without its subscription URL lines; untouched when there are none, so JSON and YAML stay intact. */
+    private fun configText(text: String, urls: List<String>): String {
+        if (urls.isEmpty()) return text
+        val drop = urls.toSet()
+        return text.removePrefix("﻿").lines().filterNot { it.trim() in drop }.joinToString("\n")
+    }
+
+    private fun listRow(now: Long, skipped: Int) = SubscriptionEntity(
+        url = "",
+        local = true,
+        kind = SubscriptionKind.LIST.name,
+        hwid = newHwid(),
+        lastOkAt = now,
+        lastAttemptAt = now,
+        skippedCount = skipped,
+        createdAt = now,
+    )
 
     private fun configRow(source: String, title: String, now: Long) = SubscriptionEntity(
         url = "",

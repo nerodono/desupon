@@ -118,8 +118,54 @@ class ConfigParserTest {
             val back = ConfigParser.read(c.text, sub)
             assertEquals(c.nodes.map { it.id }, back.nodes.map { it.id })
         }
-        val supported = whole.nodes.filter { it.capability == Capability.SUPPORTED && "chain" !in it.outboundJson.raw() }.map { it.id }
+        val supported = whole.nodes.filter { it.capability == Capability.SUPPORTED }.map { it.id }
         assertTrue(split.configs.flatMap { c -> c.nodes.map { it.id } }.containsAll(supported))
+    }
+
+    @Test
+    fun `chained nodes keep their identity when split into outbound JSON`() {
+        for (fixture in listOf("chains/singbox.json", "chains/xray.json", "chains/clash.yaml")) {
+            val text = Fx.text(fixture)
+            val whole = Fx.parse(text)
+            val split = ConfigParser.split(text, sub)
+            val splitIds = split.configs.flatMap { c -> c.nodes.map { it.id } }
+            val supported = whole.nodes.filter { it.capability == Capability.SUPPORTED }.map { it.id }
+            assertTrue(supported.any { id -> whole.nodes.first { it.id == id }.outboundJson.raw().contains("\"chain\"") }, fixture)
+            assertTrue(splitIds.containsAll(supported), "$fixture: ${supported - splitIds.toSet()}")
+            assertTrue(whole.nodes.map { it.id }.containsAll(splitIds), fixture)
+            for (c in split.configs) assertEquals(c.nodes.map { it.id }, ConfigParser.read(c.text, sub).nodes.map { it.id }, fixture)
+        }
+    }
+
+    @Test
+    fun `relays to the same exit stay distinct configs`() {
+        val split = ConfigParser.split(Fx.text("chains/xray.json"), sub)
+        val names = split.configs.flatMap { c -> c.nodes.map { it.displayName } }
+        assertTrue(names.any { "via RU" in it } && names.any { "via KZ" in it }, names.toString())
+        assertEquals(split.configs.size, split.configs.flatMap { c -> c.nodes.map { it.id } }.toSet().size)
+    }
+
+    @Test
+    fun `a malformed chain is reported, not dropped silently`() {
+        val e = assertIs<ConfigError.Malformed>(
+            ConfigParser.read("""{"type":"trojan","server":"a.example.com","server_port":443,"password":"p","chain":[{"type":"direct"}]}""", sub).error,
+        )
+        assertEquals("chain hop is not a proxy", e.detail)
+    }
+
+    @Test
+    fun `a gecko packet range the core refuses is unsupported`() {
+        fun reason(obfs: String): String? {
+            val r = ConfigParser.read("""{"type":"hysteria2","server":"a.example.com","server_port":443,"password":"p","obfs":$obfs}""", sub)
+            return r.unsupportedReasons[r.nodes.single().id]
+        }
+        assertEquals("gecko packet size range", reason("""{"type":"gecko","password":"o","min_packet_size":1300}"""))
+        assertEquals("gecko packet size range", reason("""{"type":"gecko","password":"o","max_packet_size":400}"""))
+        assertEquals("gecko packet size range", reason("""{"type":"gecko","password":"o","min_packet_size":600,"max_packet_size":500}"""))
+        assertNull(reason("""{"type":"gecko","password":"o","min_packet_size":300}"""))
+        assertNull(reason("""{"type":"gecko","password":"o"}"""))
+        assertNull(reason("""{"type":"salamander","password":"o"}"""))
+        assertTrue(Fx.reasonOf("hy2://p@a.example.com:443?obfs=gecko&obfs-password=o&minpacketsize=1300#g") == "gecko packet size range")
     }
 
     @Test

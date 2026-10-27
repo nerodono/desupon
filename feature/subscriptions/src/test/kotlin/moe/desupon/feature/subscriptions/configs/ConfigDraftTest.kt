@@ -39,6 +39,46 @@ class ConfigDraftTest {
     }
 
     @Test
+    fun `switching modes back and forth leaves an untouched config unchanged`() {
+        val uuid = "11111111-2222-4333-8444-555555555555"
+        val links = listOf(
+            "vless://$uuid@x.example.com:443?type=xhttp&security=tls&sni=x.example.com&path=%2Fx#X",
+            "vmess://$uuid@m.example.com:443?type=ws&security=tls&sni=m.example.com&path=%2Fv#V",
+            link,
+        )
+        for (l in links) {
+            val opened = ConfigDraft.of(SubId(1), l, emptySet())
+            assertEquals(ConfigMode.FORM, opened.mode, l)
+            val back = opened.toText().toForm()
+            assertEquals(ConfigMode.FORM, back.mode, l)
+            assertFalse(back.contentChanged, l)
+            assertFalse(back.dirty, l)
+            assertFalse(opened.toText().contentChanged, l)
+        }
+    }
+
+    @Test
+    fun `changing only the sets of a config the form would flag still saves`() {
+        val key = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32) { it.toByte() })
+        val noSni = "vless://11111111-2222-4333-8444-555555555555@r.example.com:443?security=reality&pbk=$key&sid=ab#R"
+        val opened = ConfigDraft.of(SubId(1), noSni, emptySet())
+        assertEquals(ConfigMode.FORM, opened.mode)
+        val edited = opened.toggleSet(SetId(2))
+        assertNull(edited.validate().error)
+        assertTrue(opened.form { it.set(Field.SERVER, "s.example.com") }.validate().error != null)
+    }
+
+    @Test
+    fun `a new config can start from pasted text`() {
+        val d = ConfigDraft.fromText(link)
+        assertTrue(d.isNew)
+        assertEquals(ConfigMode.TEXT, d.mode)
+        assertEquals(link, d.output)
+        assertTrue(d.dirty)
+        assertNull(d.validate().error)
+    }
+
+    @Test
     fun `validation and text edits clear errors`() {
         val formless = ConfigDraft.new()
         assertEquals(ConfigMode.FORM, formless.mode)

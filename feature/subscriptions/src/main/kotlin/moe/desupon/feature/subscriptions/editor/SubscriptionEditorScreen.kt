@@ -174,6 +174,7 @@ internal fun SubscriptionEditorScreen(
                 onDelete(id)
             },
             onDismiss = { confirmDelete = false },
+            list = i?.isLocal == true,
         )
     }
 
