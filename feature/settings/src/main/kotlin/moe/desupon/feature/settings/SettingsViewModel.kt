@@ -47,6 +47,8 @@ data class GeoUiState(
     val files: List<GeoFileUi> = GeoKind.entries.map(::GeoFileUi),
     /** A download or conversion is in progress. */
     val running: Boolean = false,
+    /** A download is due but held back by "Только Wi-Fi". */
+    val waitingForUnmetered: Boolean = false,
 )
 
 sealed interface ConfigState {
@@ -85,8 +87,9 @@ class SettingsViewModel(
         settings.geoStatus,
         ruleSetStore.downloaded,
         geoData.running,
-    ) { config, statuses, downloaded, running ->
-        GeoUiState(config, GeoKind.entries.map { GeoFileUi(it, statuses.getValue(it), downloaded[it].orEmpty().size) }, running)
+        geoData.waitingForUnmetered,
+    ) { config, statuses, downloaded, running, waiting ->
+        GeoUiState(config, GeoKind.entries.map { GeoFileUi(it, statuses.getValue(it), downloaded[it].orEmpty().size) }, running, waiting)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), GeoUiState())
 
     val config: StateFlow<ConfigState> = lastConfig.maskedConfig()

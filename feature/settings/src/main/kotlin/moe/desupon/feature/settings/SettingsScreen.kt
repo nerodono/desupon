@@ -53,9 +53,11 @@ import moe.desupon.data.fetch.SubscriptionFetcher
 import moe.desupon.data.geo.GeoDataSettings
 import moe.desupon.data.geo.GeoDataUpdater
 import moe.desupon.data.geo.GeoKind
+import moe.desupon.data.repo.UrlMask
 import moe.desupon.data.settings.ThemePreference
 import moe.desupon.feature.settings.logic.Ago
 import moe.desupon.feature.settings.logic.DnsAddress
+import moe.desupon.feature.settings.logic.GeoStatusLine
 import moe.desupon.feature.settings.logic.GeoUrl
 import moe.desupon.feature.settings.ui.ChoiceRow
 import moe.desupon.feature.settings.ui.ChevronRow
@@ -406,9 +408,10 @@ private fun GeoSection(state: GeoUiState, viewModel: SettingsViewModel, onEditUr
         )
         for (kind in GeoKind.entries) {
             val url = config.url(kind)
+            val shown = if (url == GeoDataSettings.defaultUrl(kind)) stringResource(R.string.settings_geo_url_default, url) else UrlMask.mask(url)
             ChevronRow(
                 title = stringResource(geoUrlTitle(kind)),
-                subtitle = if (url == GeoDataSettings.defaultUrl(kind)) stringResource(R.string.settings_geo_url_default, url) else url,
+                subtitle = if (GeoUrl.cleartext(url)) shown + "\n" + stringResource(R.string.settings_geo_url_cleartext) else shown,
                 icon = SettingsGlyphs.Globe,
                 onClick = { onEditUrl(kind) },
             )
@@ -420,7 +423,7 @@ private fun GeoSection(state: GeoUiState, viewModel: SettingsViewModel, onEditUr
             }
         }
         val lines = listOfNotNull(stringResource(R.string.settings_geo_updating).takeIf { state.running }) +
-            state.files.map { geoStatus(it, now) }
+            GeoStatusLine.of(state).map { geoStatusText(it, now) }
         SettingsRow(
             title = stringResource(R.string.settings_geo_update_now),
             subtitle = lines.joinToString("\n"),
@@ -439,21 +442,22 @@ private fun geoUrlTitle(kind: GeoKind): Int = when (kind) {
 }
 
 @Composable
-private fun geoStatus(file: GeoFileUi, nowMs: Long): String {
-    val s = file.status
-    val error = s.lastError
-    val ok = s.lastOkAtMs
-    return when {
-        error != null ->
-            stringResource(R.string.settings_geo_status_error, file.kind.id, geoErrorText(error), ago(s.lastAttemptAtMs ?: nowMs, nowMs))
-        ok != null && file.categories > 0 -> stringResource(
-            R.string.settings_geo_status_ok,
-            file.kind.id,
-            pluralStringResource(R.plurals.settings_geo_categories, file.categories, file.categories),
-            ago(ok, nowMs),
-        )
-        else -> stringResource(R.string.settings_geo_status_never, file.kind.id)
+private fun geoStatusText(line: GeoStatusLine, nowMs: Long): String = when (line) {
+    GeoStatusLine.WaitingForUnmetered -> stringResource(R.string.settings_geo_status_waiting)
+    is GeoStatusLine.Installed -> {
+        val categories = pluralStringResource(R.plurals.settings_geo_categories, line.categories, line.categories)
+        val updated = line.updatedAtMs
+        val checked = line.checkedAtMs
+        when {
+            updated == null -> stringResource(R.string.settings_geo_status_installed, line.kind.id, categories)
+            checked == null -> stringResource(R.string.settings_geo_status_ok, line.kind.id, categories, ago(updated, nowMs))
+            else -> stringResource(R.string.settings_geo_status_checked, line.kind.id, categories, ago(updated, nowMs), ago(checked, nowMs))
+        }
     }
+    is GeoStatusLine.Missing -> stringResource(R.string.settings_geo_status_never, line.kind.id)
+    is GeoStatusLine.DownloadFailed ->
+        stringResource(R.string.settings_geo_status_error, line.kind.id, geoErrorText(line.code), ago(line.atMs ?: nowMs, nowMs))
+    is GeoStatusLine.ConvertFailed -> stringResource(R.string.settings_geo_status_convert_failed, line.kind.id, ago(line.atMs, nowMs))
 }
 
 @Composable
@@ -469,7 +473,6 @@ private fun geoErrorText(code: String): String {
             GeoDataUpdater.ERROR_CHECKSUM -> R.string.geo_error_checksum
             GeoDataUpdater.ERROR_INVALID -> R.string.geo_error_invalid
             GeoDataUpdater.ERROR_STORAGE -> R.string.geo_error_storage
-            GeoDataUpdater.ERROR_CONVERT -> R.string.geo_error_convert
             else -> R.string.geo_error_unknown
         },
     )
@@ -499,7 +502,11 @@ private fun GeoUrlDialog(kind: GeoKind, current: String?, onDismiss: () -> Unit,
                 isError = !valid,
                 placeholder = { Text(GeoDataSettings.defaultUrl(kind)) },
                 supportingText = {
-                    Text(stringResource(if (valid) R.string.settings_geo_url_dialog_hint else R.string.settings_geo_url_invalid))
+                    when {
+                        !valid -> Text(stringResource(R.string.settings_geo_url_invalid))
+                        GeoUrl.cleartext(text) -> Text(stringResource(R.string.settings_geo_url_cleartext), color = MaterialTheme.colorScheme.error)
+                        else -> Text(stringResource(R.string.settings_geo_url_dialog_hint))
+                    }
                 },
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
             )

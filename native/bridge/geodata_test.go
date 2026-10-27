@@ -487,6 +487,8 @@ func TestGeoDataRejectsMalformed(t *testing.T) {
 		"code of wrong type": {datList(pbVarint(nil, 1, 5)), geoKindIP},
 		"reverse wrong type": {datList(pbBytes(geoEntryMsg("RU"), 3, []byte{1})), geoKindIP},
 		"unknown kind":       {valid, "geodomain"},
+		"bad address length": {datList(geoEntryMsg("RU", prefixItem("1.2.3.0/24"), cidrItem([]byte{1, 2, 3, 4, 5}, 8))), geoKindIP},
+		"bad prefix length":  {datList(geoEntryMsg("RU", cidrItem([]byte{1, 2, 3, 4}, 33))), geoKindIP},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -516,8 +518,8 @@ func TestGeoDataRejectsMalformed(t *testing.T) {
 			geoEntryMsg("BAD-LENGTH", cidrItem([]byte{1, 2, 3, 4, 5}, 8)),
 			geoEntryMsg("BAD-PREFIX", cidrItem([]byte{1, 2, 3, 4}, 33)),
 		))
-		if out := geoIndexOf(t, path, geoKindIP); len(out) != 3 {
-			t.Fatalf("index: %v", out)
+		if _, err := GeoDataIndex(path, geoKindIP); err == nil {
+			t.Fatal("index accepted a file that does not convert in full")
 		}
 		for _, bad := range []string{"geoip-bad-length", "geoip-bad-prefix"} {
 			if _, err := GeoDataConvert(path, geoKindIP, `["geoip-good","`+bad+`"]`, dir); err == nil {
@@ -536,4 +538,11 @@ func TestGeoDataRejectsMalformed(t *testing.T) {
 		}
 		assertNoTemps(t, dir)
 	})
+}
+
+func TestGeoDataPanicIsAnError(t *testing.T) {
+	out, err := geoCall(func() (string, error) { panic("index out of range") })
+	if err == nil || out != "" || !strings.Contains(err.Error(), "index out of range") {
+		t.Fatalf("got %q, %v", out, err)
+	}
 }

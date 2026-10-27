@@ -30,4 +30,11 @@ class GeoUrlTest {
             "https://mirror.example:70000/geoip.dat",
         ).forEach { assertFalse(GeoUrl.isValid(it), it) }
     }
+
+    @Test
+    fun flagsPlainHttp() {
+        assertTrue(GeoUrl.cleartext(" HTTP://192.0.2.1:8080/geosite.dat"))
+        assertFalse(GeoUrl.cleartext("https://mirror.example/geoip.dat"))
+        assertFalse(GeoUrl.cleartext(""))
+    }
 }

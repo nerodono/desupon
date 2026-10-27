@@ -14,5 +14,7 @@ val appModule = module {
         LastConfigSource { last.masked }
     }
     single { SubscriptionAutoUpdate(get(), CoroutineScope(SupervisorJob() + Dispatchers.Default)) }
-    single { GeoDataAutoUpdate(get(), get(), get<VpnStateHolder>().state, CoroutineScope(SupervisorJob() + Dispatchers.Default)) }
+    single {
+        GeoDataAutoUpdate(GeoDataAutoUpdate.jobs(get(), get()), get<VpnStateHolder>().state, CoroutineScope(SupervisorJob() + Dispatchers.Default))
+    }
 }

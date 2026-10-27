@@ -36,7 +36,7 @@ data class GeoDataSettings(
     }
 }
 
-/** Outcome of the last download of one database. */
+/** Downloads of one database and the rule-sets converted from it. */
 data class GeoFileStatus(
     /** Where the file on disk and [etag] came from. */
     val url: String? = null,
@@ -44,9 +44,17 @@ data class GeoFileStatus(
     val sha256: String? = null,
     /** Last time the server confirmed or replaced the file. */
     val lastOkAtMs: Long? = null,
+    /** When the file on disk was downloaded. */
+    val updatedAtMs: Long? = null,
     val lastAttemptAtMs: Long? = null,
-    /** Stable code of the last failure, see [GeoDataUpdater]; null after a success. */
+    /** Stable code of the last failed download, see [GeoDataUpdater]; null after a success. */
     val lastError: String? = null,
+    /** The address that failed with [lastError]. */
+    val errorUrl: String? = null,
+    /** [sha256] of the database all converted sets of this kind come from; any other value makes them stale. */
+    val setsSha256: String? = null,
+    /** Start of a conversion that failed or never finished; null once one succeeds. */
+    val convertFailedAtMs: Long? = null,
 )
 
 /** One category of a downloaded database; [name] is its rule-set name, [count] its entries. */

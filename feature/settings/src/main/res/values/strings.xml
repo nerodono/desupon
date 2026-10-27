@@ -67,6 +67,7 @@
     <string name="settings_geo_url_default">%1$s (по умолчанию)</string>
     <string name="settings_geo_url_dialog_hint">Прямая http(s)-ссылка на файл в формате v2ray. Пусто — по умолчанию.</string>
     <string name="settings_geo_url_invalid">Нужна ссылка http:// или https:// на файл</string>
+    <string name="settings_geo_url_cleartext">Без шифрования (http): файл могут незаметно подменить по пути</string>
     <string name="settings_geo_interval">Проверять обновления</string>
     <plurals name="settings_geo_interval_days">
         <item quantity="one">%d день</item>
@@ -80,8 +81,12 @@
     <string name="settings_geo_update_now">Обновить сейчас</string>
     <string name="settings_geo_updating">Обновление…</string>
     <string name="settings_geo_status_ok">%1$s: %2$s, обновлено %3$s</string>
+    <string name="settings_geo_status_checked">%1$s: %2$s, обновлено %3$s, проверено %4$s</string>
+    <string name="settings_geo_status_installed">%1$s: %2$s</string>
     <string name="settings_geo_status_never">%1$s: ещё не скачано</string>
-    <string name="settings_geo_status_error">%1$s: ошибка — %2$s, %3$s</string>
+    <string name="settings_geo_status_error">%1$s: ошибка загрузки — %2$s, %3$s</string>
+    <string name="settings_geo_status_convert_failed">%1$s: не удалось подготовить наборы правил, %2$s</string>
+    <string name="settings_geo_status_waiting">Загрузка ждёт Wi-Fi</string>
     <plurals name="settings_geo_categories">
         <item quantity="one">%d категория</item>
         <item quantity="few">%d категории</item>
@@ -97,7 +102,6 @@
     <string name="geo_error_checksum">контрольная сумма не совпала</string>
     <string name="geo_error_invalid">файл повреждён или не в формате v2ray</string>
     <string name="geo_error_storage">не удалось сохранить файл</string>
-    <string name="geo_error_convert">не удалось подготовить наборы правил</string>
     <string name="geo_error_unknown">неизвестная ошибка</string>
     <string name="ago_now">только что</string>
     <plurals name="ago_minutes">

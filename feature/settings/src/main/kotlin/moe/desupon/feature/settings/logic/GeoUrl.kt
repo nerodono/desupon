@@ -19,4 +19,7 @@ object GeoUrl {
         if (uri.host.isNullOrEmpty() || (uri.port != -1 && uri.port !in 1..65535)) return false
         return !uri.rawPath.isNullOrEmpty() && !uri.rawPath.endsWith("/")
     }
+
+    /** Over plain http the published checksum comes from the same unprotected origin, so it cannot catch a swapped file. */
+    fun cleartext(text: String): Boolean = text.trim().startsWith("http://", ignoreCase = true)
 }

@@ -3,6 +3,7 @@
 package moe.desupon.brain
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestScope
@@ -318,7 +319,8 @@ class Harness(
     val split = FakeSplit()
     val settings = FakeSettings()
     val selection = FakeSelection()
-    val ruleSets = MutableStateFlow<Map<String, LocalRuleSet>>(emptyMap())
+    /** Not a StateFlow, so an equal map still reaches the brain and tests see its own filtering. */
+    val ruleSets = MutableSharedFlow<Map<String, LocalRuleSet>>(replay = 1).apply { tryEmit(emptyMap()) }
     val activity = ProbeActivity(clock)
     val brain = SelectorBrain(
         libbox = libbox,

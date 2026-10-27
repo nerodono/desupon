@@ -14,42 +14,62 @@ import moe.desupon.brain.port.ConnState
 import moe.desupon.data.geo.GeoDataUpdater
 import moe.desupon.data.ruleset.RuleSetStore
 
-/**
- * Asks [GeoDataUpdater] for a due check each time the app comes to the foreground, when a VPN session comes up and every
- * [CHECK_EVERY_MS] while it stays up, since an always-on session may never show the UI; also keeps enabled rules' categories converted.
- */
+/** Asks for a due database check on every foreground, when a VPN session comes up and periodically while it stays up, as an always-on session may never show the UI. */
 class GeoDataAutoUpdate(
-    private val updater: GeoDataUpdater,
-    private val store: RuleSetStore,
+    private val jobs: Jobs,
     private val vpnState: Flow<ConnState>,
     private val scope: CoroutineScope,
 ) : DefaultLifecycleObserver {
+    /** The work being scheduled, [GeoDataUpdater] and [RuleSetStore] in the app. */
+    interface Jobs {
+        /** Puts the bundled sets on disk, so rules using them read as usable before the first session. */
+        suspend fun installSets()
+
+        /** Runs until cancelled. */
+        suspend fun watchRules()
+
+        /** [routeChanged] as in [GeoDataUpdater.isDue]. */
+        fun check(routeChanged: Boolean)
+    }
+
     fun start() {
         scope.launch {
             try {
-                store.refresh()
+                jobs.installSets()
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
             }
-            updater.watchRules()
+            jobs.watchRules()
         }
         scope.launch {
             vpnState.map(::isUp).distinctUntilChanged().collectLatest { up ->
-                while (up) {
-                    updater.updateInBackground(force = false)
+                if (!up) return@collectLatest
+                jobs.check(routeChanged = true)
+                while (true) {
                     delay(CHECK_EVERY_MS)
+                    jobs.check(routeChanged = false)
                 }
             }
         }
     }
 
-    override fun onStart(owner: LifecycleOwner) = updater.updateInBackground(force = false)
+    override fun onStart(owner: LifecycleOwner) = jobs.check(routeChanged = false)
 
     private fun isUp(state: ConnState) =
         state is ConnState.Connected || state is ConnState.Switching || state is ConnState.Degraded || state is ConnState.Unstable
 
-    private companion object {
+    companion object {
         const val CHECK_EVERY_MS = 3L * 60 * 60 * 1000
+
+        fun jobs(updater: GeoDataUpdater, store: RuleSetStore) = object : Jobs {
+            override suspend fun installSets() {
+                store.install()
+            }
+
+            override suspend fun watchRules() = updater.watchRules()
+
+            override fun check(routeChanged: Boolean) = updater.updateInBackground(force = false, routeChanged = routeChanged)
+        }
     }
 }

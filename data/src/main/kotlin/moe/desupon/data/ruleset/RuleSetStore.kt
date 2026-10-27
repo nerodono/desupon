@@ -35,14 +35,16 @@ data class RuleSetInfo(
 }
 
 /**
- * Rule-sets by the [moe.desupon.model.routing.SplitRule.value] of rule-set rules: bundled `.srs` copied from assets to [dir],
- * because the core loads rule-sets from file paths only, and categories of downloaded databases converted into [geo].
- * A converted category overrides the bundled set of the same name while its database still lists it.
+ * Rule-sets by the [moe.desupon.model.routing.SplitRule.value] of rule-set rules: bundled `.srs` copied to [dir], since the core loads
+ * rule-sets from paths only, each overridden by the converted category of the same name while a downloaded database lists it.
  */
 class RuleSetStore(private val assets: AssetManager, private val dir: File, private val geo: GeoDataFiles) {
     private class Bundled(val name: String, val domainBased: Boolean)
 
     private val lock = Mutex()
+
+    /** The app and the VPN service both install, and two writers of one temporary file could rename a partial set into place. */
+    private val installing = Mutex()
     private val _downloaded = MutableStateFlow<Map<GeoKind, List<GeoCategory>>>(emptyMap())
     private val _sets = MutableStateFlow(resolve(emptyMap()))
     private val _available = MutableStateFlow(infos(emptyMap()))
@@ -58,22 +60,26 @@ class RuleSetStore(private val assets: AssetManager, private val dir: File, priv
     /** Copies missing or outdated bundled files, then re-reads the downloaded side; returns [sets]. */
     suspend fun install(): Map<String, LocalRuleSet> = withContext(Dispatchers.IO) {
         try {
-            dir.mkdirs()
-            for (set in BUNDLED) {
-                val bytes = assets.open("$ASSET_DIR/${set.name}$EXT").use { it.readBytes() }
-                val target = bundledFile(set.name)
-                if (target.isFile && target.length() == bytes.size.toLong() && target.readBytes().contentEquals(bytes)) continue
-                val tmp = File(dir, "${set.name}$EXT.tmp")
-                tmp.writeBytes(bytes)
-                if (!tmp.renameTo(target)) {
-                    tmp.delete()
-                    throw IOException("cannot install rule-set ${set.name}")
-                }
-            }
+            installing.withLock { copyBundled() }
         } finally {
             refresh()
         }
         sets.value
+    }
+
+    private fun copyBundled() {
+        dir.mkdirs()
+        for (set in BUNDLED) {
+            val bytes = assets.open("$ASSET_DIR/${set.name}$EXT").use { it.readBytes() }
+            val target = bundledFile(set.name)
+            if (target.isFile && target.length() == bytes.size.toLong() && target.readBytes().contentEquals(bytes)) continue
+            val tmp = File(dir, "${set.name}$EXT.tmp")
+            tmp.writeBytes(bytes)
+            if (!tmp.renameTo(target)) {
+                tmp.delete()
+                throw IOException("cannot install rule-set ${set.name}")
+            }
+        }
     }
 
     /** Re-reads the category indexes and the converted files. */

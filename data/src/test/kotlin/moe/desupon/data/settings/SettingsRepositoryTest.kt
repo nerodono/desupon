@@ -139,7 +139,18 @@ class SettingsRepositoryTest {
         r.setGeoUrl(GeoKind.GEOIP, "https://mirror.example/geoip.dat")
         r.setGeoInterval(null)
         r.setGeoUnmeteredOnly(false)
-        val status = GeoFileStatus("https://mirror.example/geoip.dat", "\"e1\"", "ab", 10, 20, null)
+        val status = GeoFileStatus(
+            url = "https://mirror.example/geoip.dat",
+            etag = "\"e1\"",
+            sha256 = "ab",
+            lastOkAtMs = 10,
+            updatedAtMs = 5,
+            lastAttemptAtMs = 20,
+            lastError = "HTTP_404",
+            errorUrl = "https://typo.example/geoip.dat",
+            setsSha256 = "cd",
+            convertFailedAtMs = 30,
+        )
         r.updateGeoStatus(GeoKind.GEOIP) { status }
 
         r.resetAll()

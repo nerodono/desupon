@@ -244,7 +244,18 @@ class SettingsRepository(private val store: DataStore<Preferences>) : SettingsPo
 
     private fun Preferences.geoStatus(kind: GeoKind): GeoFileStatus {
         val k = GEO_STATUS.getValue(kind)
-        return GeoFileStatus(this[k.url], this[k.etag], this[k.sha256], this[k.lastOk], this[k.lastAttempt], this[k.lastError])
+        return GeoFileStatus(
+            url = this[k.url],
+            etag = this[k.etag],
+            sha256 = this[k.sha256],
+            lastOkAtMs = this[k.lastOk],
+            updatedAtMs = this[k.updated],
+            lastAttemptAtMs = this[k.lastAttempt],
+            lastError = this[k.lastError],
+            errorUrl = this[k.errorUrl],
+            setsSha256 = this[k.setsSha256],
+            convertFailedAtMs = this[k.convertFailed],
+        )
     }
 
     private fun MutablePreferences.putGeoStatus(kind: GeoKind, s: GeoFileStatus) {
@@ -253,8 +264,12 @@ class SettingsRepository(private val store: DataStore<Preferences>) : SettingsPo
         putOrRemove(k.etag, s.etag)
         putOrRemove(k.sha256, s.sha256)
         putOrRemove(k.lastOk, s.lastOkAtMs)
+        putOrRemove(k.updated, s.updatedAtMs)
         putOrRemove(k.lastAttempt, s.lastAttemptAtMs)
         putOrRemove(k.lastError, s.lastError)
+        putOrRemove(k.errorUrl, s.errorUrl)
+        putOrRemove(k.setsSha256, s.setsSha256)
+        putOrRemove(k.convertFailed, s.convertFailedAtMs)
     }
 
     private fun <T> MutablePreferences.putOrRemove(key: Preferences.Key<T>, value: T?) {
@@ -266,8 +281,12 @@ class SettingsRepository(private val store: DataStore<Preferences>) : SettingsPo
         val etag = stringPreferencesKey("${kind.id}_etag")
         val sha256 = stringPreferencesKey("${kind.id}_sha256")
         val lastOk = longPreferencesKey("${kind.id}_last_ok_at")
+        val updated = longPreferencesKey("${kind.id}_updated_at")
         val lastAttempt = longPreferencesKey("${kind.id}_last_attempt_at")
         val lastError = stringPreferencesKey("${kind.id}_last_error")
+        val errorUrl = stringPreferencesKey("${kind.id}_error_url")
+        val setsSha256 = stringPreferencesKey("${kind.id}_sets_sha256")
+        val convertFailed = longPreferencesKey("${kind.id}_convert_failed_at")
     }
 
     private fun packagesKey(mode: SplitMode): Preferences.Key<Set<String>>? = when (mode) {

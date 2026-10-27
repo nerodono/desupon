@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -55,17 +57,28 @@ type geoConverted struct {
 
 // GeoDataIndex lists the categories of a v2ray geoip.dat or geosite.dat (kind "geoip"|"geosite") as JSON [{code, name, count}]; name is the rule-set tag GeoDataConvert accepts.
 func GeoDataIndex(datPath, kind string) (string, error) {
-	return onGoroutineErr(func() (string, error) {
-		out, err := geoIndex(datPath, kind)
-		return out, maskErr(err)
-	})
+	return geoCall(func() (string, error) { return geoIndex(datPath, kind) })
 }
 
 // GeoDataConvert writes <outDir>/<name>.srs for every name of namesJSON and returns JSON [{name, count, skipped}]; no file is replaced unless all of them convert and load.
 func GeoDataConvert(datPath, kind, namesJSON, outDir string) (string, error) {
-	return onGoroutineErr(func() (string, error) {
-		out, err := geoConvert(datPath, kind, namesJSON, outDir)
-		return out, maskErr(err)
+	return geoCall(func() (string, error) {
+		// The largest categories leave hundreds of megabytes of garbage in the process that runs the tunnel.
+		defer debug.FreeOSMemory()
+		return geoConvert(datPath, kind, namesJSON, outDir)
+	})
+}
+
+// geoCall turns a panic on a downloaded file into an error, which would otherwise take the tunnel's process down.
+func geoCall(f func() (string, error)) (string, error) {
+	return onGoroutineErr(func() (out string, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				out, err = "", fmt.Errorf("geodata: panic: %v", r)
+			}
+			err = maskErr(err)
+		}()
+		return f()
 	})
 }
 
@@ -323,10 +336,10 @@ func (d *geoData) walk(e geoEntry, item func([]byte) error) (bool, error) {
 	return reverse, nil
 }
 
-// checkItem validates the wire shape only, which also rejects a file of the other kind.
+// checkItem fails on every item conversion fails on, so an indexed file converts in full; it also rejects a file of the other kind.
 func (d *geoData) checkItem(item []byte) error {
 	if d.kind == geoKindIP {
-		_, _, err := cidrFields(item)
+		_, err := parseGeoCIDR(item)
 		return err
 	}
 	_, _, err := domainFields(item)

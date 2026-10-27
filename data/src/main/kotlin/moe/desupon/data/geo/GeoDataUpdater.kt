@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.desupon.brain.port.Clock
 import moe.desupon.brain.port.SplitRuleRepo
 import moe.desupon.data.fetch.FetchError
@@ -38,11 +39,7 @@ import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-/**
- * Keeps geoip.dat and geosite.dat fresh and converts the categories of enabled rule-set rules into [RuleSetStore] files.
- * Downloads go over the default network, so through the tunnel while it is up, and a transport failure is retried once on [bypass].
- * A database replaces the previous one only after its published checksum, when there is one, and the core's parser accept it.
- */
+/** Keeps geoip.dat and geosite.dat fresh and the categories enabled rule-set rules use converted into [RuleSetStore] files. */
 class GeoDataUpdater(
     private val client: OkHttpClient,
     private val settings: SettingsRepository,
@@ -89,94 +86,39 @@ class GeoDataUpdater(
         class Failed(val code: String) : Download
     }
 
+    /** The local file failed, not the transfer, so another route cannot help. */
+    private class StorageFailure(cause: IOException? = null) : IOException(cause)
+
     private val downloads = Mutex()
     private val conversions = Mutex()
     private var busy = 0
     private val _running = MutableStateFlow(false)
+    private val _waitingForUnmetered = MutableStateFlow(false)
 
     /** A download or a conversion is in progress. */
     val running: StateFlow<Boolean> = _running.asStateFlow()
 
-    /** [force] skips the schedule and the unmetered requirement; the server may still answer that nothing changed. */
-    suspend fun update(force: Boolean): Map<GeoKind, Outcome> {
+    /** The last check found a download due and the network metered. */
+    val waitingForUnmetered: StateFlow<Boolean> = _waitingForUnmetered.asStateFlow()
+
+    /** [force] skips the schedule, the unmetered requirement and the conversion backoff; [routeChanged] as in [isDue]. */
+    suspend fun update(force: Boolean, routeChanged: Boolean = false): Map<GeoKind, Outcome> {
         downloads.withLock {
             working {
-                val config = settings.geoData.first()
-                val statuses = settings.geoStatus.first()
-                val now = clock.nowMs()
-                val due = GeoKind.entries.filter { force || isDue(config, statuses.getValue(it), it, files.dat(it).isFile, now) }
-                if (due.isEmpty()) return GeoKind.entries.associateWith { Outcome.NotDue }
-                if (!force && config.unmeteredOnly && network.metered() != false) return GeoKind.entries.associateWith { Outcome.Metered }
-
-                val outcomes = LinkedHashMap<GeoKind, Outcome>()
-                val fetched = LinkedHashMap<GeoKind, Fetched>()
-                for (kind in GeoKind.entries) {
-                    if (kind !in due) {
-                        outcomes[kind] = Outcome.NotDue
-                        continue
-                    }
-                    val url = config.url(kind)
-                    when (val r = download(kind, url, statuses.getValue(kind))) {
-                        is Attempt.Ready -> fetched[kind] = r.file
-                        is Attempt.Unchanged -> {
-                            outcomes[kind] = Outcome.NotModified
-                            val at = clock.nowMs()
-                            settings.updateGeoStatus(kind) {
-                                it.copy(url = url, etag = r.etag, lastOkAtMs = at, lastAttemptAtMs = at, lastError = null)
-                            }
-                        }
-                        is Attempt.Failed -> {
-                            outcomes[kind] = Outcome.Failed(r.code)
-                            recordFailure(kind, r.code)
-                        }
-                    }
-                }
-                if (fetched.isNotEmpty()) outcomes += install(fetched)
-                return GeoKind.entries.associateWith { outcomes.getValue(it) }
+                val outcomes = check(force, routeChanged)
+                _waitingForUnmetered.value = Outcome.Metered in outcomes.values
+                ensureReferenced(retryFailed = force || outcomes.values.any { it is Outcome.Updated })
+                return outcomes
             }
         }
     }
 
     /** [update] on the updater's own scope; an automatic one is dropped while another update runs. */
-    fun updateInBackground(force: Boolean) {
+    fun updateInBackground(force: Boolean, routeChanged: Boolean = false) {
         if (!force && downloads.isLocked) return
         scope.launch {
             try {
-                update(force)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-            }
-        }
-    }
-
-    /** Converts the categories of enabled rule-set rules that have no file yet, or every converted one after a failed conversion. */
-    suspend fun ensureReferenced() {
-        conversions.withLock {
-            working {
-                val referenced = referencedNames()
-                val statuses = settings.geoStatus.first()
-                var converted = false
-                for (kind in GeoKind.entries) {
-                    val retry = statuses.getValue(kind).lastError == ERROR_CONVERT
-                    val existing = if (retry) files.convertedNames() else emptySet()
-                    val names = files.readIndex(kind).map { it.name }
-                        .filter { (it in referenced && (retry || !files.set(it).isFile)) || it in existing }
-                    if (names.isNotEmpty()) {
-                        convert(kind, names)
-                        converted = true
-                    }
-                }
-                if (converted) store.refresh()
-            }
-        }
-    }
-
-    /** Converts what enabled rule-set rules start using; runs until cancelled. */
-    suspend fun watchRules() {
-        rules.rules.map(::referenced).distinctUntilChanged().conflate().collect {
-            try {
-                ensureReferenced()
+                update(force, routeChanged)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -185,9 +127,51 @@ class GeoDataUpdater(
     }
 
     /**
-     * Before a VPN session, while no config references the converted sets: drops the ones no enabled rule uses and leftovers of
-     * interrupted writes unless that work is in progress, then converts what is missing in the background.
+     * Converts referenced categories without a file and every set built from an older database; unless [retryFailed], a kind whose last
+     * conversion failed or died with the process waits [RETRY_AFTER_MS], so a conversion that gets the process killed cannot loop.
      */
+    suspend fun ensureReferenced(retryFailed: Boolean) {
+        conversions.withLock {
+            working {
+                val referenced = referencedNames()
+                val existing = withContext(Dispatchers.IO) { files.convertedNames() }
+                var converted = false
+                for (kind in GeoKind.entries) {
+                    val status = settings.geoStatus.first().getValue(kind)
+                    val stale = status.setsSha256 != status.sha256
+                    val names = files.readIndex(kind).map { it.name }
+                        .filter { if (it in existing) stale else it in referenced }
+                    if (names.isEmpty()) {
+                        if (stale) settings.updateGeoStatus(kind) { it.copy(setsSha256 = status.sha256) }
+                        continue
+                    }
+                    val failedAt = status.convertFailedAtMs
+                    val now = clock.nowMs()
+                    if (!retryFailed && failedAt != null && now - failedAt in 0 until RETRY_AFTER_MS) continue
+                    settings.updateGeoStatus(kind) { it.copy(convertFailedAtMs = now) }
+                    converted = true
+                    if (convert(kind, names)) settings.updateGeoStatus(kind) { it.copy(setsSha256 = status.sha256, convertFailedAtMs = null) }
+                }
+                if (converted) store.refresh()
+            }
+        }
+    }
+
+    /** Converts what enabled rule-set rules start using; runs until cancelled. */
+    suspend fun watchRules() {
+        var started = false
+        rules.rules.map(::referenced).distinctUntilChanged().conflate().collect {
+            try {
+                ensureReferenced(retryFailed = started)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+            started = true
+        }
+    }
+
+    /** Runs while no config references the converted sets, so unused ones can go; missing ones get [SESSION_WAIT_MS] to make the first config. */
     suspend fun prepareSession() {
         if (conversions.tryLock()) {
             try {
@@ -216,14 +200,50 @@ class GeoDataUpdater(
                 downloads.unlock()
             }
         }
-        scope.launch {
+        val converting = scope.launch {
             try {
-                ensureReferenced()
+                ensureReferenced(retryFailed = false)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
             }
         }
+        withTimeoutOrNull(SESSION_WAIT_MS) { converting.join() }
+    }
+
+    private suspend fun check(force: Boolean, routeChanged: Boolean): Map<GeoKind, Outcome> {
+        val config = settings.geoData.first()
+        val statuses = settings.geoStatus.first()
+        val now = clock.nowMs()
+        val due = GeoKind.entries.filter { force || isDue(config, statuses.getValue(it), it, files.dat(it).isFile, now, routeChanged) }
+        if (due.isEmpty()) return GeoKind.entries.associateWith { Outcome.NotDue }
+        if (!force && config.unmeteredOnly && network.metered() != false) return GeoKind.entries.associateWith { Outcome.Metered }
+
+        val outcomes = LinkedHashMap<GeoKind, Outcome>()
+        val fetched = LinkedHashMap<GeoKind, Fetched>()
+        for (kind in GeoKind.entries) {
+            if (kind !in due) {
+                outcomes[kind] = Outcome.NotDue
+                continue
+            }
+            val url = config.url(kind)
+            when (val r = download(kind, url, statuses.getValue(kind))) {
+                is Attempt.Ready -> fetched[kind] = r.file
+                is Attempt.Unchanged -> {
+                    outcomes[kind] = Outcome.NotModified
+                    val at = clock.nowMs()
+                    settings.updateGeoStatus(kind) {
+                        it.copy(etag = r.etag, lastOkAtMs = at, lastAttemptAtMs = at, lastError = null, errorUrl = null)
+                    }
+                }
+                is Attempt.Failed -> {
+                    outcomes[kind] = Outcome.Failed(r.code)
+                    recordFailure(kind, url, r.code)
+                }
+            }
+        }
+        if (fetched.isNotEmpty()) outcomes += install(fetched)
+        return GeoKind.entries.associateWith { outcomes.getValue(it) }
     }
 
     private suspend fun download(kind: GeoKind, urlText: String, status: GeoFileStatus): Attempt {
@@ -235,6 +255,7 @@ class GeoDataUpdater(
         try {
             var used = client
             var r = fetch(client, url, etag, tmp)
+            // While the VPN is up the default network is the tunnel, and the proxy may be what fails.
             if (r is Download.Failed && r.code in TRANSPORT_ERRORS) {
                 val outside = runCatching { bypass() }.getOrNull()
                 if (outside != null) {
@@ -286,6 +307,8 @@ class GeoDataUpdater(
                     else -> withContext(Dispatchers.IO) { save(response, tmp) }
                 }
             }
+        } catch (_: StorageFailure) {
+            Download.Failed(ERROR_STORAGE)
         } catch (_: InterruptedIOException) {
             Download.Failed(FetchError.Timeout.code)
         } catch (_: IOException) {
@@ -295,11 +318,16 @@ class GeoDataUpdater(
 
     private suspend fun save(response: Response, tmp: File): Download {
         val body = response.body
-        if (body.contentLength() > maxBytes) return Download.Failed(FetchError.TooLarge.code)
+        val length = body.contentLength()
+        if (length > maxBytes) return Download.Failed(FetchError.TooLarge.code)
         val digest = MessageDigest.getInstance("SHA-256")
         var total = 0L
-        tmp.parentFile?.mkdirs()
-        FileOutputStream(tmp).use { out ->
+        val out = disk {
+            tmp.parentFile?.mkdirs()
+            FileOutputStream(tmp)
+        }
+        try {
+            if (length > 0 && tmp.usableSpace < length) throw StorageFailure()
             body.byteStream().use { input ->
                 val buf = ByteArray(CHUNK)
                 while (true) {
@@ -309,13 +337,24 @@ class GeoDataUpdater(
                     total += n
                     if (total > maxBytes) return Download.Failed(FetchError.TooLarge.code)
                     digest.update(buf, 0, n)
-                    out.write(buf, 0, n)
+                    disk { out.write(buf, 0, n) }
                 }
             }
-            out.fd.sync()
+            disk {
+                out.fd.sync()
+                out.close()
+            }
+        } finally {
+            runCatching { out.close() }
         }
         if (total == 0L) return Download.Failed(FetchError.EmptyBody.code)
         return Download.Saved(hex(digest.digest()), response.header("ETag"))
+    }
+
+    private inline fun <T> disk(block: () -> T): T = try {
+        block()
+    } catch (e: IOException) {
+        throw StorageFailure(e)
     }
 
     /** The hash in `<url>.sha256sum`; null when that is missing, unreachable or not in sha256sum format. */
@@ -340,28 +379,30 @@ class GeoDataUpdater(
         }
     }
 
-    /** Puts every fetched file in place with its index, then reconverts the sets that come from it. */
-    private suspend fun install(fetched: Map<GeoKind, Fetched>): Map<GeoKind, Outcome> {
-        conversions.withLock {
-            val outcomes = LinkedHashMap<GeoKind, Outcome>()
-            val installed = LinkedHashMap<GeoKind, Fetched>()
-            for ((kind, f) in fetched) {
-                if (withContext(Dispatchers.IO) { place(kind, f) }) {
-                    outcomes[kind] = Outcome.Updated(f.categories.size)
-                    val now = clock.nowMs()
-                    settings.updateGeoStatus(kind) { GeoFileStatus(f.url, f.etag, f.sha256, lastOkAtMs = now, lastAttemptAtMs = now) }
-                    installed[kind] = f
-                } else {
-                    outcomes[kind] = Outcome.Failed(ERROR_STORAGE)
-                    recordFailure(kind, ERROR_STORAGE)
+    /** Puts every fetched file in place with its index; the sets converted from the previous file are stale from then on. */
+    private suspend fun install(fetched: Map<GeoKind, Fetched>): Map<GeoKind, Outcome> = conversions.withLock {
+        fetched.mapValues { (kind, f) ->
+            // Cleared first: after a crash between the swap and the status write, the sets still read as stale.
+            settings.updateGeoStatus(kind) { it.copy(setsSha256 = null) }
+            if (withContext(Dispatchers.IO) { place(kind, f) }) {
+                val now = clock.nowMs()
+                settings.updateGeoStatus(kind) {
+                    it.copy(
+                        url = f.url,
+                        etag = f.etag,
+                        sha256 = f.sha256,
+                        lastOkAtMs = now,
+                        updatedAtMs = now,
+                        lastAttemptAtMs = now,
+                        lastError = null,
+                        errorUrl = null,
+                    )
                 }
+                Outcome.Updated(f.categories.size)
+            } else {
+                recordFailure(kind, f.url, ERROR_STORAGE)
+                Outcome.Failed(ERROR_STORAGE)
             }
-            if (installed.isNotEmpty()) {
-                val keep = referencedNames() + files.convertedNames()
-                for ((kind, f) in installed) convert(kind, f.categories.map { it.name }.filter { it in keep })
-                store.refresh()
-            }
-            return outcomes
         }
     }
 
@@ -380,31 +421,27 @@ class GeoDataUpdater(
         }
     }
 
-    private suspend fun convert(kind: GeoKind, names: List<String>) {
-        if (names.isEmpty()) return
-        val ok = try {
-            withContext(Dispatchers.IO) {
-                bridge.convert(files.dat(kind).path, kind.id, GeoDataFiles.JSON.encodeToString(names), files.sets.path)
-            }
-            true
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            false
-        }
-        settings.updateGeoStatus(kind) { s ->
-            when {
-                !ok -> s.copy(lastError = ERROR_CONVERT)
-                s.lastError == ERROR_CONVERT -> s.copy(lastError = null)
-                else -> s
+    /** One call per set, so a category that fails leaves the others usable; true when all converted. */
+    private suspend fun convert(kind: GeoKind, names: List<String>): Boolean {
+        var ok = true
+        for (name in names) {
+            try {
+                withContext(Dispatchers.IO) {
+                    bridge.convert(files.dat(kind).path, kind.id, GeoDataFiles.JSON.encodeToString(listOf(name)), files.sets.path)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                ok = false
             }
         }
+        return ok
     }
 
     /** Keeps the file on disk and its validators. */
-    private suspend fun recordFailure(kind: GeoKind, code: String) {
+    private suspend fun recordFailure(kind: GeoKind, url: String, code: String) {
         val now = clock.nowMs()
-        settings.updateGeoStatus(kind) { it.copy(lastAttemptAtMs = now, lastError = code) }
+        settings.updateGeoStatus(kind) { it.copy(lastAttemptAtMs = now, lastError = code, errorUrl = url) }
     }
 
     private suspend fun referencedNames(): Set<String> = referenced(rules.rules.first())
@@ -432,11 +469,11 @@ class GeoDataUpdater(
         const val ERROR_CHECKSUM = "CHECKSUM"
         const val ERROR_INVALID = "INVALID"
         const val ERROR_STORAGE = "STORAGE"
-        const val ERROR_CONVERT = "CONVERT"
 
         const val MAX_BYTES = 256L * 1024 * 1024
         const val DAY_MS = 24L * 60 * 60 * 1000
         const val RETRY_AFTER_MS = 6L * 60 * 60 * 1000
+        const val SESSION_WAIT_MS = 5_000L
 
         private const val HTTP_OK = 200
         private const val HTTP_NOT_MODIFIED = 304
@@ -451,7 +488,8 @@ class GeoDataUpdater(
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
-            .callTimeout(15, TimeUnit.MINUTES)
+            // The read timeout catches stalls; this only bounds a trickle, so a slow link still gets geosite through.
+            .callTimeout(2, TimeUnit.HOURS)
             .followSslRedirects(false)
             .build()
 
@@ -459,17 +497,16 @@ class GeoDataUpdater(
         fun referenced(rules: List<SplitRule>): Set<String> =
             rules.filter { it.enabled && it.kind == SplitRuleKind.RULE_SET }.mapTo(HashSet()) { it.value.trim() }
 
-        /**
-         * Automatic checks only: a new URL or a missing file is due at once, otherwise once the interval passed since the server last
-         * confirmed the file; a failure waits [RETRY_AFTER_MS]. A clock set back makes the file due.
-         */
-        fun isDue(config: GeoDataSettings, status: GeoFileStatus, kind: GeoKind, onDisk: Boolean, nowMs: Long): Boolean {
+        /** A failure holds back only its own URL for [RETRY_AFTER_MS], and a transport failure nothing once [routeChanged], as the new route may be what it lacked. */
+        fun isDue(config: GeoDataSettings, status: GeoFileStatus, kind: GeoKind, onDisk: Boolean, nowMs: Long, routeChanged: Boolean = false): Boolean {
             val days = config.intervalDays
             if (!config.auto || days == null) return false
+            val url = config.url(kind)
             val attempt = status.lastAttemptAtMs
-            val failed = status.lastError != null && status.lastError != ERROR_CONVERT
-            if (failed && attempt != null && nowMs - attempt in 0 until RETRY_AFTER_MS) return false
-            if (!onDisk || status.url != config.url(kind)) return true
+            val error = status.lastError
+            val backoff = error != null && status.errorUrl == url && !(routeChanged && error in TRANSPORT_ERRORS)
+            if (backoff && attempt != null && nowMs - attempt in 0 until RETRY_AFTER_MS) return false
+            if (!onDisk || status.url != url) return true
             val ok = status.lastOkAtMs ?: return true
             return nowMs < ok || nowMs - ok >= days * DAY_MS
         }
