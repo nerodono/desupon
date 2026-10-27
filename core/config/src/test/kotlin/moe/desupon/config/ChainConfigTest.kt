@@ -12,6 +12,7 @@ import moe.desupon.model.Secret
 import moe.desupon.model.network.NetworkMode
 import moe.desupon.model.node.Node
 import moe.desupon.model.node.NodeId
+import moe.desupon.model.node.Protocol
 import moe.desupon.model.node.Tier
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -38,6 +39,41 @@ class ChainConfigTest {
     private fun main(vararg nodes: Node): JsonObject = Fixtures.parse(
         gen.mainConfig(MainConfigRequest(selection = mapOf(Tier.DIRECT to nodes.toList()), mode = NetworkMode.OPEN)).json.raw(),
     )
+
+    @Test
+    fun `sleep-fragile nodes keep a QUIC session, on the node or a hop, except hysteria2`() {
+        val vlessQuic = Fixtures.node(
+            Protocol.VLESS, "vq.example.com", 443,
+            """{"type":"vless","server":"vq.example.com","server_port":443,"uuid":"${Fixtures.UUID}",
+               "tls":{"enabled":true,"server_name":"vq.example.com","alpn":["h3"]},"transport":{"type":"quic"}}""",
+        )
+        for (node in listOf(Fixtures.tuic, Fixtures.juicity, Fixtures.hysteria, Fixtures.vlessXhttpH3, vlessQuic)) {
+            assertTrue(ConfigGenerator.sleepFragile(node), node.displayName)
+        }
+        for (node in listOf(Fixtures.hysteria2, Fixtures.vlessXhttp, Fixtures.vlessReality, Fixtures.trojanGrpc, Fixtures.shadowsocks, Fixtures.anytls)) {
+            assertFalse(ConfigGenerator.sleepFragile(node), node.displayName)
+        }
+        assertTrue(ConfigGenerator.sleepFragile(chained(Fixtures.shadowsocks, Fixtures.vlessXhttpH3)))
+        assertTrue(ConfigGenerator.sleepFragile(chained(Fixtures.vlessReality, vlessQuic, Fixtures.shadowsocks)))
+        assertFalse(ConfigGenerator.sleepFragile(chained(Fixtures.shadowsocks, Fixtures.hysteria2)))
+        assertFalse(ConfigGenerator.sleepFragile(Fixtures.tuic.copy(outboundJson = Secret("{"))))
+    }
+
+    @Test
+    fun `pooled nodes carry every flow over one TCP connection, on the node or a hop`() {
+        val muxed = Fixtures.node(
+            Protocol.SHADOWSOCKS, "198.51.100.9", 8388,
+            """{"type":"shadowsocks","server":"198.51.100.9","server_port":8388,"method":"2022-blake3-aes-128-gcm",
+               "password":"${Fixtures.SS_PASSWORD}","multiplex":{"enabled":true,"protocol":"h2mux"}}""",
+        )
+        for (node in listOf(Fixtures.trojanGrpc, Fixtures.vlessXhttp, Fixtures.anytls, muxed)) {
+            assertTrue(ConfigGenerator.pooled(node), node.displayName)
+        }
+        for (node in listOf(Fixtures.vlessXhttpH3, Fixtures.vmessWs, Fixtures.vlessReality, Fixtures.shadowsocks, Fixtures.tuic, Fixtures.hysteria2)) {
+            assertFalse(ConfigGenerator.pooled(node), node.displayName)
+        }
+        assertTrue(ConfigGenerator.pooled(chained(Fixtures.shadowsocks, Fixtures.trojanGrpc)))
+    }
 
     @Test
     fun `hops are emitted once per node, linked by detour, outside the groups`() {

@@ -53,6 +53,7 @@ import moe.desupon.brain.port.SocketProtector
 import moe.desupon.brain.port.SplitRuleRepo
 import moe.desupon.brain.port.TierLearningRepo
 import moe.desupon.brain.port.TierPlanner
+import moe.desupon.brain.port.TunnelRecovery
 import moe.desupon.brain.port.VpnControl
 import moe.desupon.brain.probe.ProbeActivity
 import moe.desupon.brain.probe.ProbeRequestResult
@@ -109,7 +110,7 @@ class SelectorBrain(
     private val selfPackage: String = ConfigGenerator.SELF_PACKAGE,
     private val selectionPort: SelectionPort = SelectionPort.All,
     private val activity: ProbeActivity = ProbeActivity(clock),
-) : VpnControl {
+) : VpnControl, TunnelRecovery {
     private val _state = MutableStateFlow<ConnState>(ConnState.Idle)
     override val state: StateFlow<ConnState> = _state.asStateFlow()
 
@@ -148,9 +149,17 @@ class SelectorBrain(
         screenOn.value = on
     }
 
-    /** The device slept long enough for tunnel state to die meanwhile: the core starts over and the current node is checked. */
-    fun onWake() {
-        sessionEvents?.trySend(Event.Wake)
+    /**
+     * Loaded outbounds whose QUIC session the server may have dropped start over, after [BrainConfig.longSleepMs] also those
+     * pooling their flows on one TCP connection, then the current node is checked.
+     */
+    override fun onWake(sleptMs: Long) {
+        sessionEvents?.trySend(Event.Wake(sleptMs))
+    }
+
+    /** The core starts over, unless it just did, then the current node is checked. */
+    override fun onNetworkUnblocked() {
+        sessionEvents?.trySend(Event.Unblocked)
     }
 
     /** Installed apps changed what the per-app split resolves to; the running config is reloaded on the current node. */
@@ -229,7 +238,9 @@ class SelectorBrain(
 
         data object CheckNow : Event
 
-        data object Wake : Event
+        data class Wake(val sleptMs: Long) : Event
+
+        data object Unblocked : Event
 
         data object AppsChanged : Event
 
@@ -556,7 +567,8 @@ class SelectorBrain(
             is Event.Split -> onSplit(event.split)
             is Event.Selection -> onSelection(event.selection)
             Event.CheckNow -> if (offline) Unit else check()
-            Event.Wake -> onWake()
+            is Event.Wake -> startOver { resetSleepers(event.sleptMs) }
+            Event.Unblocked -> startOver(::resetNetworkIfDue)
             Event.AppsChanged -> loaded?.let { reapply(it.plan, split) } ?: Unit
             is Event.ProbeSet -> startSetProbe(event.done, event.full)
             is Event.Batch -> if (event.key == net.key) record(event.results) else Unit
@@ -585,17 +597,16 @@ class SelectorBrain(
         }
 
         /**
-         * Server-side QUIC idle timeouts and NAT mappings ran on while the device slept: the core starts over, then the current
-         * node is checked at once, as on [resume]. Failures of probes through the core in the grace window that follows count
-         * for nothing durable.
+         * Tunnel state may have died meanwhile: [reset] starts it over, then the current node is checked at once, as on [resume].
+         * Failures of probes through the core in the grace window that follows count for nothing durable.
          */
-        private suspend fun onWake() {
+        private suspend fun startOver(reset: suspend () -> Unit) {
             failures = 0
             upward = null
             // Unstable keeps its exit check.
             if (_state.value !is ConnState.Unstable) recheckAt = null
             graceUntilMs = clock.elapsedMs() + config.wakeGraceMs
-            resetNetwork()
+            reset()
             if (offline) return
             val now = clock.elapsedMs()
             retryAt?.let { retryAt = now }
@@ -615,6 +626,22 @@ class SelectorBrain(
         private suspend fun resetNetwork() {
             freshSinceMs = clock.elapsedMs()
             guard(Unit) { libbox.resetNetwork() }
+        }
+
+        /** An unblock flapping around Doze maintenance windows drops every connection at most once per [BrainConfig.resetCooldownMs]. */
+        private suspend fun resetNetworkIfDue() {
+            val since = freshSinceMs
+            if (since == null || clock.elapsedMs() - since >= config.resetCooldownMs) resetNetwork()
+        }
+
+        /** Loaded nodes whose sessions a sleep of [sleptMs] may have killed unseen by their clients. */
+        private suspend fun resetSleepers(sleptMs: Long) {
+            val l = loaded ?: return
+            val long = sleptMs >= config.longSleepMs
+            for (node in l.plan.nodes) {
+                if (node.id.tag !in l.tags) continue
+                if (ConfigGenerator.sleepFragile(node) || long && ConfigGenerator.pooled(node)) resetOutbound(node.id.tag)
+            }
         }
 
         /** A refused reset leaves the session as it is. */

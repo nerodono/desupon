@@ -19,13 +19,13 @@ import moe.desupon.brain.FailReason
 import moe.desupon.brain.port.ConnState
 
 /**
- * Simple mode's reconnect after a failed session: waits 30 s, 60 s, 2 min, then 5 min per attempt, or only until the network changes
- * or the device wakes from a long sleep.
+ * Simple mode's reconnect after a failed session: waits 30 s, 60 s, 2 min, then 5 min per attempt, or only until the network changes,
+ * the device wakes from a long sleep or the system stops blocking the network.
  * Confined to the thread of [scope].
  *
  * @param enabled simple mode; null until the setting is read.
  * @param networks the current network's identity, null while offline.
- * @param wakes emits on each wake from a sleep long enough for tunnel state to die, see [WakeDetector].
+ * @param wakes emits on each wake from a sleep long enough for tunnel state to die, see [WakeDetector], and when the network is unblocked.
  */
 class AutoRetry(
     private val scope: CoroutineScope,

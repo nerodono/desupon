@@ -35,6 +35,8 @@ data class BrainConfig(
     val resetCooldownMs: Long = 60_000,
     /** After a wake from a long sleep, failures of probes through the core are not recorded and switches keep the last good node for this long. */
     val wakeGraceMs: Long = 20_000,
+    /** A sleep this long may outlive the NAT mapping or server session of a pooled TCP connection too. */
+    val longSleepMs: Long = 5 * 60_000L,
     val flapWindowMs: Long = 5 * 60_000L,
     val maxSwitchesPerWindow: Int = 3,
     val upwardChecks: Int = 3,

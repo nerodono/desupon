@@ -158,6 +158,22 @@ class ConfigGenerator {
         const val MIN_MTU = 1280
         const val MAX_MTU = 1500
 
+        /**
+         * [node] or a hop it dials through keeps a QUIC session its server drops after an idle timeout the client cannot see
+         * across device sleep; hysteria2 is left out because its patched client checks that itself.
+         */
+        fun sleepFragile(node: Node): Boolean = dialed(node).any { (type, body) -> type != "hysteria2" && NodeRules.isQuic(type, body) }
+
+        /** [node] or a hop it dials through carries its flows over one long-lived TCP connection, which a long sleep can kill. */
+        fun pooled(node: Node): Boolean = dialed(node).any { (type, body) -> NodeRules.isPooled(type, body) }
+
+        /** The outbound [node] loads as and every hop it dials through, by type; empty when its JSON is unreadable. */
+        private fun dialed(node: Node): List<Pair<String, JsonObject>> {
+            val source = parseObject(node.outboundJson.raw()) ?: return emptyList()
+            val hops = source.array(Node.CHAIN_KEY).filterIsInstance<JsonObject>()
+            return (listOf(source) + hops).mapNotNull { body -> body.string("type")?.let { it to body } }
+        }
+
         private const val MAIN_LOG_LEVEL = "warn"
         private const val PROBE_LOG_LEVEL = "error"
 

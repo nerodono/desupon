@@ -253,11 +253,21 @@ internal object NodeRules {
         if (base.obj("headers")?.keys?.any { it.equals("host", ignoreCase = true) } == true) out += "$what headers contain Host"
     }
 
-    private fun isQuic(type: String, obj: Map<String, JsonElement>): Boolean {
+    fun isQuic(type: String, obj: Map<String, JsonElement>): Boolean {
         if (type in QUIC_TYPES) return true
         val transport = obj.obj("transport")?.string("type")
         if (transport == "quic") return true
         return transport == "xhttp" && firstAlpn(obj.obj("tls")) == H3
+    }
+
+    /** Every flow rides one long-lived TCP connection: sing-mux, AnyTLS sessions, or an HTTP/2 transport. */
+    fun isPooled(type: String, obj: Map<String, JsonElement>): Boolean {
+        if (type == "anytls" || obj.obj("multiplex")?.bool("enabled") == true) return true
+        return when (obj.obj("transport")?.string("type")) {
+            "grpc", "http" -> true
+            "xhttp" -> !isQuic(type, obj)
+            else -> false
+        }
     }
 
     private fun firstAlpn(tls: JsonObject?): String? = alpnList(tls).firstOrNull()

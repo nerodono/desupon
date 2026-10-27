@@ -105,6 +105,109 @@ object Nodes {
         )
     }
 
+    fun tuic(name: String, country: String? = "NL"): Node = quic(name, country, Protocol.TUIC, tuicJson(nextHost()))
+
+    fun hy2(name: String, country: String? = "NL"): Node {
+        val host = nextHost()
+        return quic(
+            name, country, Protocol.HYSTERIA2,
+            """{"type":"hysteria2","server":"$host","server_port":8443,"password":"pw-$name","tls":{"enabled":true,"server_name":"hy2.test","alpn":["h3"]}}""",
+        )
+    }
+
+    /** VLESS over XHTTP whose first ALPN h3 makes it ride QUIC. */
+    fun vlessH3(name: String, country: String? = "NL"): Node = vlessXhttp(name, country, alpn = "\"h3\",\"h2\"", udpOnly = true)
+
+    /** VLESS over XHTTP on HTTP/2: every flow shares one TCP connection. */
+    fun vlessH2(name: String, country: String? = "NL"): Node = vlessXhttp(name, country, alpn = "\"h2\"", udpOnly = false)
+
+    /** A Shadowsocks exit dialed through a VLESS-over-QUIC hop. */
+    fun ssViaVlessQuic(name: String, country: String? = "NL"): Node {
+        val host = nextHost()
+        val hop = """{"type":"vless","server":"${nextHost()}","server_port":443,"uuid":"$UUID",""" +
+            """"tls":{"enabled":true,"server_name":"v.test","alpn":["h3"]},"transport":{"type":"quic"}}"""
+        return outbound(
+            name, country, Protocol.SHADOWSOCKS, host, udpOnly = false, via = listOf("vless-quic-hop-$name"),
+            json = """{"type":"shadowsocks","server":"$host","server_port":8388,"method":"2022-blake3-aes-128-gcm",""" +
+                """"password":"WlpaWlpaWlpaWlpaWlpaWg==","chain":[$hop]}""",
+        )
+    }
+
+    private fun vlessXhttp(name: String, country: String?, alpn: String, udpOnly: Boolean): Node {
+        val host = nextHost()
+        return outbound(
+            name, country, Protocol.VLESS, host, udpOnly,
+            json = """{"type":"vless","server":"$host","server_port":443,"uuid":"$UUID",""" +
+                """"tls":{"enabled":true,"server_name":"v.test","alpn":[$alpn]},""" +
+                """"transport":{"type":"xhttp","mode":"stream-one","path":"/q","x_padding_bytes":"200-800"}}""",
+        )
+    }
+
+    private fun outbound(
+        name: String,
+        country: String?,
+        protocol: Protocol,
+        host: String,
+        udpOnly: Boolean,
+        json: String,
+        via: List<String> = emptyList(),
+    ): Node = Node(
+        id = NodeKey(protocol, host, 443, credential = Secret("cred-$name"), via = via).id,
+        subs = emptySet(),
+        protocol = protocol,
+        displayName = name,
+        country = country,
+        capability = Capability.SUPPORTED,
+        outboundJson = Secret(json),
+        isEndpoint = false,
+        udpOnly = udpOnly,
+        labels = emptySet(),
+    )
+
+    /** A Shadowsocks exit dialed through a TUIC hop. */
+    fun ssViaTuic(name: String, country: String? = "NL"): Node {
+        val host = nextHost()
+        val key = NodeKey(Protocol.SHADOWSOCKS, host, 8388, credential = Secret("cred-$name"), via = listOf("tuic-hop-$name"))
+        return Node(
+            id = key.id,
+            subs = emptySet(),
+            protocol = Protocol.SHADOWSOCKS,
+            displayName = name,
+            country = country,
+            capability = Capability.SUPPORTED,
+            outboundJson = Secret(
+                """{"type":"shadowsocks","server":"$host","server_port":8388,"method":"2022-blake3-aes-128-gcm","password":"WlpaWlpaWlpaWlpaWlpaWg==","chain":[${tuicJson(nextHost())}]}""",
+            ),
+            isEndpoint = false,
+            udpOnly = false,
+            labels = emptySet(),
+        )
+    }
+
+    private fun quic(name: String, country: String?, protocol: Protocol, json: String): Node {
+        val host = Regex(""""server":"([^"]+)"""").find(json)!!.groupValues[1]
+        val key = NodeKey(protocol, host, 443, credential = Secret("cred-$name"))
+        return Node(
+            id = key.id,
+            subs = emptySet(),
+            protocol = protocol,
+            displayName = name,
+            country = country,
+            capability = Capability.SUPPORTED,
+            outboundJson = Secret(json),
+            isEndpoint = false,
+            udpOnly = true,
+            labels = emptySet(),
+        )
+    }
+
+    private const val UUID = "00000000-0000-4000-8000-00000000c0de"
+
+    private fun tuicJson(host: String) =
+        """{"type":"tuic","server":"$host","server_port":443,"uuid":"00000000-0000-4000-8000-00000000c0de","password":"pw","congestion_control":"bbr","tls":{"enabled":true,"server_name":"tuic.test","alpn":["h3"]}}"""
+
+    private fun nextHost() = "198.51.100.${next++}"
+
     private const val WG_KEY = "WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlo="
 }
 

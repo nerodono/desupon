@@ -5,10 +5,17 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
 import android.net.VpnService
 import android.service.quicksettings.TileService
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import moe.desupon.brain.port.ConnState
+import moe.desupon.brain.port.TunnelRecovery
+import moe.desupon.platform.net.NetworkObserver
 import moe.desupon.vpn.lifecycle.VpnFailReason
 import moe.desupon.vpn.lifecycle.VpnStateHolder
 import moe.desupon.vpn.tile.DesuponTileService
@@ -22,6 +29,7 @@ import org.koin.dsl.module
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.shadows.ShadowNetwork
 import org.robolectric.shadows.ShadowVpnService
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -103,5 +111,39 @@ class DesuponVpnServiceTest {
         assertNull(DesuponVpnService.enterForeground {})
         assertEquals(VpnFailReason.NOT_PREPARED, DesuponVpnService.enterForeground { throw SecurityException("systemExempted") })
         assertEquals(VpnFailReason.START_BLOCKED, DesuponVpnService.enterForeground { throw IllegalStateException("background") })
+    }
+
+    @Test
+    fun `wakes reach the brain with how long the device slept, the observer's unblocks as unblocks`() = runTest {
+        val wakes = MutableSharedFlow<Long>()
+        val observer = NetworkObserver(context)
+        val calls = mutableListOf<String>()
+        val target = object : TunnelRecovery {
+            override fun onWake(sleptMs: Long) {
+                calls += "wake:$sleptMs"
+            }
+
+            override fun onNetworkUnblocked() {
+                calls += "unblocked"
+            }
+        }
+        val forward = backgroundScope.launch {
+            with(DesuponVpnService) { forwardRecovery(wakes, observer, { calls += "log" }, target) }
+        }
+        observer.start()
+        runCurrent()
+
+        wakes.emit(25_000)
+        runCurrent()
+        assertEquals(listOf("log", "wake:25000"), calls)
+
+        val callback = shadowOf(context.getSystemService(ConnectivityManager::class.java)).networkCallbacks.single()
+        val wifi = ShadowNetwork.newInstance(100)
+        callback.onBlockedStatusChanged(wifi, true)
+        callback.onBlockedStatusChanged(wifi, false)
+        runCurrent()
+        assertEquals(listOf("log", "wake:25000", "log", "unblocked"), calls)
+        forward.cancel()
+        observer.stop()
     }
 }
