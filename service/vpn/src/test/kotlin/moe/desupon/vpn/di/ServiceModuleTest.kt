@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import moe.desupon.brain.probe.ProbeRequestResult
 import moe.desupon.model.selection.LocationChoice
@@ -16,6 +17,7 @@ import moe.desupon.brain.port.VpnControl
 import moe.desupon.data.di.dataModule
 import moe.desupon.data.location.LocationListSource
 import moe.desupon.data.fetch.BypassNetwork
+import moe.desupon.data.geo.GeoDataUpdater
 import moe.desupon.platform.di.platformModule
 import moe.desupon.vpn.lifecycle.ServiceVpnControl
 import moe.desupon.vpn.service.BrainFactory
@@ -49,9 +51,10 @@ class ServiceModuleTest {
         assertSame(koin.get<ServiceVpnControl>(), koin.get<VpnControl>())
 
         val scope = CoroutineScope(Job())
-        val brain = koin.get<BrainFactory>().create(scope, SocketProtector { true }, emptyMap())
+        val brain = koin.get<BrainFactory>().create(scope, SocketProtector { true }, flowOf(emptyMap()))
         assertEquals(ConnState.Idle, brain.state.value)
         scope.cancel()
+        assertFalse(koin.get<GeoDataUpdater>().running.value)
     }
 
     @Test

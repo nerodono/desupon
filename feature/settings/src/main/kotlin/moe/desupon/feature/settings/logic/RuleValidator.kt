@@ -12,7 +12,7 @@ sealed interface RuleValidation {
     data class Invalid(val error: RuleError) : RuleValidation
 }
 
-/** Accepts a subset of what the config generator accepts, so a saved rule is never skipped there. */
+/** Accepts a subset of what the config generator accepts at save time; a rule-set may become unavailable later. */
 object RuleValidator {
     private val LABEL = Regex("[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?")
     private val KEYWORD = Regex("[a-z0-9._-]+")

@@ -19,11 +19,14 @@ import moe.desupon.brain.probe.ProbeActivity
 import moe.desupon.config.ConfigGenerator
 import moe.desupon.data.di.AndroidClock
 import moe.desupon.data.fetch.BypassNetwork
+import moe.desupon.data.geo.GeoDataBridge
+import moe.desupon.data.geo.MeteredNetwork
 import moe.desupon.data.location.LocationListSource
 import moe.desupon.data.repo.NodeRepository
 import moe.desupon.data.repo.ProbeStatRepository
 import moe.desupon.data.repo.SelectionRepository
 import moe.desupon.data.repo.SubscriptionRepository
+import moe.desupon.platform.geo.CoreGeoData
 import moe.desupon.platform.libbox.CoreRuntime
 import moe.desupon.platform.net.NetworkObserver
 import moe.desupon.vpn.lifecycle.LastConfig
@@ -52,6 +55,18 @@ val serviceModule = module {
         val runtime = get<CoreRuntime>()
         val observer = get<NetworkObserver>()
         BypassNetwork { observer.current.value?.network?.takeIf { runtime.host != null } }
+    }
+    single<MeteredNetwork> {
+        val observer = get<NetworkObserver>()
+        MeteredNetwork { observer.awaitCurrent(NETWORK_WAIT_MS)?.metered }
+    }
+    single<GeoDataBridge> {
+        object : GeoDataBridge {
+            override fun index(datPath: String, kind: String) = CoreGeoData.index(datPath, kind)
+
+            override fun convert(datPath: String, kind: String, namesJson: String, outDir: String) =
+                CoreGeoData.convert(datPath, kind, namesJson, outDir)
+        }
     }
     single { ProbeActivity(clock()) }
     single {

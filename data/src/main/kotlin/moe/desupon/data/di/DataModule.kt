@@ -1,6 +1,9 @@
 package moe.desupon.data.di
 
 import android.os.SystemClock
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import moe.desupon.brain.port.Clock
 import moe.desupon.brain.port.NetworkMemoryRepo
 import moe.desupon.brain.port.NodeRepo
@@ -15,6 +18,8 @@ import moe.desupon.data.fetch.BypassNetwork
 import moe.desupon.data.fetch.boundTo
 import moe.desupon.data.fetch.DeviceInfo
 import moe.desupon.data.fetch.SubscriptionFetcher
+import moe.desupon.data.geo.GeoDataFiles
+import moe.desupon.data.geo.GeoDataUpdater
 import moe.desupon.data.repo.NetworkMemoryRepository
 import moe.desupon.data.repo.NodeRepository
 import moe.desupon.data.repo.ProbeStatRepository
@@ -40,6 +45,7 @@ object AndroidClock : Clock {
 
 private fun Scope.clock(): Clock = getOrNull() ?: AndroidClock
 
+/** [GeoDataUpdater] needs a [moe.desupon.data.geo.GeoDataBridge] and a [moe.desupon.data.geo.MeteredNetwork] bound elsewhere. */
 val dataModule = module {
     single { DesuponDatabase.create(androidContext()) }
     single { BodyCache(File(androidContext().noBackupFilesDir, "sub")) }
@@ -62,5 +68,22 @@ val dataModule = module {
     } bind NetworkMemoryRepo::class
     single { ProbeStatRepository(get<DesuponDatabase>().probeStatDao(), clock()) } bind ProbeStatRepo::class
     single { TierLearningRepository(get<DesuponDatabase>().tierLearningDao(), clock()) } bind TierLearningRepo::class
-    single { RuleSetStore(androidContext().assets, File(androidContext().filesDir, RuleSetStore.ASSET_DIR)) }
+    single { GeoDataFiles(File(androidContext().filesDir, GeoDataFiles.DIR)) }
+    single { RuleSetStore(androidContext().assets, File(androidContext().filesDir, RuleSetStore.ASSET_DIR), get()) }
+    single {
+        val client = GeoDataUpdater.defaultClient()
+        val bypass = getOrNull<BypassNetwork>()
+        GeoDataUpdater(
+            client = client,
+            settings = get(),
+            store = get(),
+            files = get(),
+            rules = get<SplitRuleRepo>(),
+            bridge = get(),
+            network = get(),
+            clock = clock(),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            bypass = { bypass?.current()?.let(client::boundTo) },
+        )
+    }
 }

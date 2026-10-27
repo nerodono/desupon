@@ -23,7 +23,7 @@ data class SplitRule(
     val order: Int,
     val enabled: Boolean = true,
     val kind: SplitRuleKind,
-    /** Domain, suffix, keyword, CIDR, or a bundled rule-set name for [SplitRuleKind.RULE_SET]. */
+    /** Domain, suffix, keyword, CIDR, or a rule-set name for [SplitRuleKind.RULE_SET]. */
     val value: String,
     val action: SplitAction,
 )

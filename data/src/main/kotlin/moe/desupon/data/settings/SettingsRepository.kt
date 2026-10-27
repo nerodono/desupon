@@ -4,15 +4,21 @@ import android.content.Context
 import androidx.datastore.core.DataMigration
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import moe.desupon.brain.port.SettingsPort
+import moe.desupon.data.geo.GeoDataSettings
+import moe.desupon.data.geo.GeoFileStatus
+import moe.desupon.data.geo.GeoKind
 import moe.desupon.data.split.AppBypass
 import moe.desupon.data.split.RuDefaults
 import moe.desupon.model.network.DnsSettings
@@ -81,6 +87,24 @@ class SettingsRepository(private val store: DataStore<Preferences>) : SettingsPo
     /** User-Agent for subscriptions without their own; null means [moe.desupon.data.fetch.SubscriptionFetcher.DEFAULT_USER_AGENT]. */
     val subscriptionUserAgent: Flow<String?> =
         store.data.map { it[SUB_USER_AGENT]?.takeIf { ua -> ua.isNotBlank() } }.distinctUntilChanged()
+
+    val geoData: Flow<GeoDataSettings> = store.data.map { p ->
+        GeoDataSettings(
+            auto = p[GEO_AUTO] ?: true,
+            geoipUrl = p[GEOIP_URL]?.takeIf { it.isNotBlank() },
+            geositeUrl = p[GEOSITE_URL]?.takeIf { it.isNotBlank() },
+            intervalDays = when (val days = p[GEO_INTERVAL]) {
+                null -> GeoDataSettings.DEFAULT_INTERVAL_DAYS
+                GEO_INTERVAL_MANUAL -> null
+                else -> days.takeIf { it > 0 } ?: GeoDataSettings.DEFAULT_INTERVAL_DAYS
+            },
+            unmeteredOnly = p[GEO_UNMETERED_ONLY] ?: true,
+        )
+    }.distinctUntilChanged()
+
+    /** Survives [resetAll]. */
+    val geoStatus: Flow<Map<GeoKind, GeoFileStatus>> =
+        store.data.map { p -> GeoKind.entries.associateWith { p.geoStatus(it) } }.distinctUntilChanged()
 
     /** The notification permission was already asked for once; survives [resetAll]. */
     val notificationPromptShown: Flow<Boolean> = store.data.map { it[NOTIFICATION_PROMPT_SHOWN] ?: false }.distinctUntilChanged()
@@ -167,6 +191,27 @@ class SettingsRepository(private val store: DataStore<Preferences>) : SettingsPo
         store.edit { p -> userAgent?.trim()?.takeIf { it.isNotEmpty() }?.let { p[SUB_USER_AGENT] = it } ?: p.remove(SUB_USER_AGENT) }
     }
 
+    suspend fun setGeoAuto(enabled: Boolean) = put(GEO_AUTO, enabled)
+
+    /** Blank, null or the built-in URL restores the default. */
+    suspend fun setGeoUrl(kind: GeoKind, url: String?) {
+        val key = if (kind == GeoKind.GEOIP) GEOIP_URL else GEOSITE_URL
+        val custom = url?.trim()?.takeIf { it.isNotEmpty() && it != GeoDataSettings.defaultUrl(kind) }
+        store.edit { p -> if (custom == null) p.remove(key) else p[key] = custom }
+    }
+
+    /** Null checks only on request. */
+    suspend fun setGeoInterval(days: Int?) {
+        require(days == null || days > 0) { "days must be positive" }
+        store.edit { it[GEO_INTERVAL] = days ?: GEO_INTERVAL_MANUAL }
+    }
+
+    suspend fun setGeoUnmeteredOnly(enabled: Boolean) = put(GEO_UNMETERED_ONLY, enabled)
+
+    suspend fun updateGeoStatus(kind: GeoKind, transform: (GeoFileStatus) -> GeoFileStatus) {
+        store.edit { p -> p.putGeoStatus(kind, transform(p.geoStatus(kind))) }
+    }
+
     suspend fun setNotificationPromptShown() = put(NOTIFICATION_PROMPT_SHOWN, true)
 
     suspend fun setBatteryPromptShown() = put(BATTERY_PROMPT_SHOWN, true)
@@ -195,6 +240,53 @@ class SettingsRepository(private val store: DataStore<Preferences>) : SettingsPo
         SplitMode.ALL -> emptySet()
         SplitMode.ALL_EXCEPT_SELECTED -> this[PACKAGES_EXCEPT] ?: RuDefaults.bypassApps
         SplitMode.ONLY_SELECTED -> this[PACKAGES_ONLY] ?: emptySet()
+    }
+
+    private fun Preferences.geoStatus(kind: GeoKind): GeoFileStatus {
+        val k = GEO_STATUS.getValue(kind)
+        return GeoFileStatus(
+            url = this[k.url],
+            etag = this[k.etag],
+            sha256 = this[k.sha256],
+            lastOkAtMs = this[k.lastOk],
+            updatedAtMs = this[k.updated],
+            lastAttemptAtMs = this[k.lastAttempt],
+            lastError = this[k.lastError],
+            errorUrl = this[k.errorUrl],
+            setsSha256 = this[k.setsSha256],
+            convertFailedAtMs = this[k.convertFailed],
+        )
+    }
+
+    private fun MutablePreferences.putGeoStatus(kind: GeoKind, s: GeoFileStatus) {
+        val k = GEO_STATUS.getValue(kind)
+        putOrRemove(k.url, s.url)
+        putOrRemove(k.etag, s.etag)
+        putOrRemove(k.sha256, s.sha256)
+        putOrRemove(k.lastOk, s.lastOkAtMs)
+        putOrRemove(k.updated, s.updatedAtMs)
+        putOrRemove(k.lastAttempt, s.lastAttemptAtMs)
+        putOrRemove(k.lastError, s.lastError)
+        putOrRemove(k.errorUrl, s.errorUrl)
+        putOrRemove(k.setsSha256, s.setsSha256)
+        putOrRemove(k.convertFailed, s.convertFailedAtMs)
+    }
+
+    private fun <T> MutablePreferences.putOrRemove(key: Preferences.Key<T>, value: T?) {
+        if (value == null) remove(key) else this[key] = value
+    }
+
+    private class GeoStatusKeys(kind: GeoKind) {
+        val url = stringPreferencesKey("${kind.id}_source_url")
+        val etag = stringPreferencesKey("${kind.id}_etag")
+        val sha256 = stringPreferencesKey("${kind.id}_sha256")
+        val lastOk = longPreferencesKey("${kind.id}_last_ok_at")
+        val updated = longPreferencesKey("${kind.id}_updated_at")
+        val lastAttempt = longPreferencesKey("${kind.id}_last_attempt_at")
+        val lastError = stringPreferencesKey("${kind.id}_last_error")
+        val errorUrl = stringPreferencesKey("${kind.id}_error_url")
+        val setsSha256 = stringPreferencesKey("${kind.id}_sets_sha256")
+        val convertFailed = longPreferencesKey("${kind.id}_convert_failed_at")
     }
 
     private fun packagesKey(mode: SplitMode): Preferences.Key<Set<String>>? = when (mode) {
@@ -240,9 +332,18 @@ class SettingsRepository(private val store: DataStore<Preferences>) : SettingsPo
         private val PREFIX_BYPASS = booleanPreferencesKey("split_prefix_bypass")
         private val FORCE_TUNNEL = stringSetPreferencesKey("split_force_tunnel")
 
+        private val GEO_AUTO = booleanPreferencesKey("geo_auto")
+        private val GEOIP_URL = stringPreferencesKey("geoip_url")
+        private val GEOSITE_URL = stringPreferencesKey("geosite_url")
+        private val GEO_INTERVAL = intPreferencesKey("geo_interval")
+        private val GEO_UNMETERED_ONLY = booleanPreferencesKey("geo_unmetered_only")
+        private const val GEO_INTERVAL_MANUAL = 0
+        private val GEO_STATUS = GeoKind.entries.associateWith(::GeoStatusKeys)
+
         private val APP_SPLIT_KEYS = listOf(SPLIT_MODE, PACKAGES_EXCEPT, PACKAGES_ONLY, PREFIXES, PREFIX_BYPASS, FORCE_TUNNEL)
         private val RESETTABLE_KEYS = APP_SPLIT_KEYS + listOf(
             THEME, AMOLED, DESU_MODE, DYNAMIC_COLOR, SIMPLE_MODE, SHOW_SYSTEM_APPS, LAN_BYPASS, IPV4_ONLY, DNS_REMOTE, SUB_USER_AGENT,
+            GEO_AUTO, GEOIP_URL, GEOSITE_URL, GEO_INTERVAL, GEO_UNMETERED_ONLY,
         )
 
         /** One instance per process: DataStore forbids two stores on the same file. */

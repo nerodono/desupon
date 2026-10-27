@@ -11,6 +11,7 @@ import moe.desupon.brain.plan.PlannerConfig
 import moe.desupon.brain.port.BrainEvent
 import moe.desupon.brain.port.ConnState
 import moe.desupon.brain.probe.ProbeRequestResult
+import moe.desupon.config.LocalRuleSet
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -531,6 +532,37 @@ class SelectorBrainTest {
 
         h.assertOn(d1)
         assertEquals(startedAt, h.connected().connectedAtMs)
+        h.assertReloadsSelected()
+    }
+
+    @Test
+    fun `a rule-set becoming usable reloads once, a refresh in place or an unused set does not`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val h = Harness(this, listOf(d1))
+        h.alive(d1)
+        h.split.rules.value = listOf(SplitRule(order = 0, kind = SplitRuleKind.RULE_SET, value = "geoip-ru-blocked", action = SplitAction.PROXY))
+        h.connectOn(WIFI)
+        assertEquals(1, h.libbox.reloads.size)
+        assertTrue("geoip-ru-blocked" !in h.libbox.reloads.last().json, "an unusable set is skipped")
+
+        val blocked = "geoip-ru-blocked" to LocalRuleSet("/sets/geoip-ru-blocked.srs", domainBased = false)
+        h.ruleSets.emit(mapOf(blocked))
+        runCurrent()
+        assertEquals(2, h.libbox.reloads.size)
+        assertTrue("/sets/geoip-ru-blocked.srs" in h.libbox.reloads.last().json)
+
+        h.ruleSets.emit(mapOf(blocked))
+        runCurrent()
+        assertEquals(2, h.libbox.reloads.size, "the same set again is a content refresh in place")
+        h.ruleSets.emit(mapOf(blocked, "geosite-unused" to LocalRuleSet("/sets/geosite-unused.srs")))
+        runCurrent()
+        assertEquals(2, h.libbox.reloads.size, "no rule uses the new set")
+
+        h.ruleSets.emit(mapOf("geosite-unused" to LocalRuleSet("/sets/geosite-unused.srs")))
+        runCurrent()
+        assertEquals(3, h.libbox.reloads.size)
+        assertTrue("geoip-ru-blocked" !in h.libbox.reloads.last().json)
+        h.assertOn(d1)
         h.assertReloadsSelected()
     }
 

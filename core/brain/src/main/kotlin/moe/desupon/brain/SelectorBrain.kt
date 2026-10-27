@@ -12,6 +12,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -78,6 +79,7 @@ import moe.desupon.model.probe.ProbeStat
 import moe.desupon.model.probe.Throughput
 import moe.desupon.model.routing.ConnectionSettings
 import moe.desupon.model.routing.SplitRule
+import moe.desupon.model.routing.SplitRuleKind
 import moe.desupon.model.selection.ChainStep
 import moe.desupon.model.selection.LocationChoice
 import moe.desupon.model.subscription.SubId
@@ -102,7 +104,8 @@ class SelectorBrain(
     private val clock: Clock,
     private val scope: CoroutineScope,
     private val config: BrainConfig = BrainConfig(),
-    private val ruleSets: Map<String, LocalRuleSet> = emptyMap(),
+    /** Usable rule-sets by name; a change to the ones enabled rules reference reloads the config, a content refresh in place does not. */
+    private val ruleSets: Flow<Map<String, LocalRuleSet>> = flowOf(emptyMap()),
     private val selfPackage: String = ConfigGenerator.SELF_PACKAGE,
     private val selectionPort: SelectionPort = SelectionPort.All,
     private val activity: ProbeActivity = ProbeActivity(clock),
@@ -242,7 +245,15 @@ class SelectorBrain(
         class ThroughputDone(val key: NetworkKey, val finalists: List<NodeId>, val results: Map<NodeId, Throughput?>) : Event
     }
 
-    private data class SplitSettings(val rules: List<SplitRule>, val settings: ConnectionSettings)
+    /** [ruleSets] holds only the sets enabled rules reference, so other sets coming and going reload nothing. */
+    private data class SplitSettings(val rules: List<SplitRule>, val settings: ConnectionSettings, val ruleSets: Map<String, LocalRuleSet>) {
+        companion object {
+            fun of(rules: List<SplitRule>, settings: ConnectionSettings, sets: Map<String, LocalRuleSet>): SplitSettings {
+                val used = rules.filter { it.enabled && it.kind == SplitRuleKind.RULE_SET }.mapTo(HashSet()) { it.value.trim() }
+                return SplitSettings(rules, settings, sets.filterKeys { it in used })
+            }
+        }
+    }
 
     /** Candidates of one network-mode tier inside one chain step; [step] is the chain index, its size for the rest. */
     private class Level(val step: Int, val tier: Tier, val nodes: List<Node>)
@@ -327,13 +338,15 @@ class SelectorBrain(
             _live.value = emptySet()
             _step.value = null
             net = network.filterNotNull().first()
-            split = SplitSettings(splitRules.rules.first(), settings.settings.first())
+            split = SplitSettings.of(splitRules.rules.first(), settings.settings.first(), ruleSets.first())
             selection = selectionPort.selection.first()
             establish()
             _live.value = emptySet()
             onEstablished()
             scope.launch { network.collect { events.send(if (it == null) Event.Offline else Event.Net(it)) } }
-            scope.launch { combine(splitRules.rules, settings.settings, ::SplitSettings).collect { events.send(Event.Split(it)) } }
+            scope.launch {
+                combine(splitRules.rules, settings.settings, ruleSets) { r, s, sets -> SplitSettings.of(r, s, sets) }.collect { events.send(Event.Split(it)) }
+            }
             scope.launch { selectionPort.selection.collect { events.send(Event.Selection(it)) } }
             scope.launch { watchTraffic() }
             scope.launch { watchStall() }
@@ -475,7 +488,7 @@ class SelectorBrain(
                         selection = target.topK,
                         mode = mode,
                         rules = split.rules,
-                        ruleSets = ruleSets,
+                        ruleSets = split.ruleSets,
                         dns = split.settings.dns,
                         lanBypass = split.settings.lanBypass,
                         selfPackage = selfPackage,

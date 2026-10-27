@@ -18,6 +18,8 @@ class DesuponApp : Application() {
             androidContext(this@DesuponApp)
             modules(dataModule, platformModule, serviceModule, homeModule, subscriptionsModule, settingsModule, appModule)
         }.koin
-        ProcessLifecycleOwner.get().lifecycle.addObserver(koin.get<SubscriptionAutoUpdate>())
+        val lifecycle = ProcessLifecycleOwner.get().lifecycle
+        lifecycle.addObserver(koin.get<SubscriptionAutoUpdate>())
+        lifecycle.addObserver(koin.get<GeoDataAutoUpdate>().also { it.start() })
     }
 }

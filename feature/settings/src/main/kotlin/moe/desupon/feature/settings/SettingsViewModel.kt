@@ -9,13 +9,19 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import moe.desupon.data.geo.GeoDataSettings
+import moe.desupon.data.geo.GeoDataUpdater
+import moe.desupon.data.geo.GeoFileStatus
+import moe.desupon.data.geo.GeoKind
 import moe.desupon.data.repo.SplitRuleRepository
+import moe.desupon.data.ruleset.RuleSetStore
 import moe.desupon.data.settings.SettingsRepository
 import moe.desupon.data.settings.ThemePreference
 import moe.desupon.data.settings.UiSettings
 import moe.desupon.feature.settings.apps.InstalledAppsSource
 import moe.desupon.feature.settings.logic.AppRows
 import moe.desupon.feature.settings.logic.DnsAddress
+import moe.desupon.feature.settings.logic.GeoUrl
 import moe.desupon.model.network.DnsSettings
 import moe.desupon.model.routing.ConnectionSettings
 import moe.desupon.model.routing.SplitMode
@@ -33,6 +39,17 @@ data class SettingsUiState(
     val splitMode: SplitMode get() = connection.apps.mode
 }
 
+data class GeoFileUi(val kind: GeoKind, val status: GeoFileStatus = GeoFileStatus(), val categories: Int = 0)
+
+data class GeoUiState(
+    val settings: GeoDataSettings = GeoDataSettings(),
+    val files: List<GeoFileUi> = GeoKind.entries.map(::GeoFileUi),
+    /** A download or conversion is in progress. */
+    val running: Boolean = false,
+    /** A download is due but held back by "Только Wi-Fi". */
+    val waitingForUnmetered: Boolean = false,
+)
+
 sealed interface ConfigState {
     data object Loading : ConfigState
     data object None : ConfigState
@@ -44,6 +61,8 @@ class SettingsViewModel(
     private val splitRules: SplitRuleRepository,
     lastConfig: LastConfigSource,
     appsSource: InstalledAppsSource,
+    private val geoData: GeoDataUpdater,
+    ruleSetStore: RuleSetStore,
     ownPackage: String,
 ) : ViewModel() {
     private val installed = MutableStateFlow<List<String>?>(null)
@@ -61,6 +80,16 @@ class SettingsViewModel(
     ) { ui, connection, ua, rules, apps ->
         SettingsUiState(ui, connection, ua, rules, apps?.let { AppRows.checked(connection.apps, it, ownPackage).size })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), SettingsUiState())
+
+    val geo: StateFlow<GeoUiState> = combine(
+        settings.geoData,
+        settings.geoStatus,
+        ruleSetStore.downloaded,
+        geoData.running,
+        geoData.waitingForUnmetered,
+    ) { config, statuses, downloaded, running, waiting ->
+        GeoUiState(config, GeoKind.entries.map { GeoFileUi(it, statuses.getValue(it), downloaded[it].orEmpty().size) }, running, waiting)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), GeoUiState())
 
     val config: StateFlow<ConfigState> = lastConfig.maskedConfig()
         .map { json -> json?.takeIf { it.isNotBlank() }?.let(ConfigState::Ready) ?: ConfigState.None }
@@ -90,6 +119,23 @@ class SettingsViewModel(
     /** Blank restores the default. */
     fun setUserAgent(userAgent: String) = launch { settings.setSubscriptionUserAgent(userAgent) }
 
+    fun setGeoAuto(enabled: Boolean) = launchThenCheck { settings.setGeoAuto(enabled) }
+
+    /** Returns false and saves nothing when [url] is not an http(s) file URL; blank restores the default. */
+    fun setGeoUrl(kind: GeoKind, url: String): Boolean {
+        if (!GeoUrl.isValid(url)) return false
+        launchThenCheck { settings.setGeoUrl(kind, url) }
+        return true
+    }
+
+    /** Null checks only on request. */
+    fun setGeoInterval(days: Int?) = launchThenCheck { settings.setGeoInterval(days) }
+
+    fun setGeoUnmeteredOnly(enabled: Boolean) = launchThenCheck { settings.setGeoUnmeteredOnly(enabled) }
+
+    /** Ignores the schedule and the network type. */
+    fun updateGeoNow() = geoData.updateInBackground(force = true)
+
     /** Everything this screen and split tunneling control; subscriptions are untouched. */
     fun resetAll() = launch {
         settings.resetAll()
@@ -98,6 +144,12 @@ class SettingsViewModel(
 
     private fun launch(block: suspend () -> Unit) {
         viewModelScope.launch { block() }
+    }
+
+    /** A changed setting may make a download due right away. */
+    private fun launchThenCheck(block: suspend () -> Unit) = launch {
+        block()
+        geoData.updateInBackground(force = false)
     }
 
     private companion object {

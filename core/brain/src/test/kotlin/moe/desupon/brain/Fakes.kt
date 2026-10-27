@@ -3,6 +3,7 @@
 package moe.desupon.brain
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestScope
@@ -26,6 +27,7 @@ import moe.desupon.brain.port.TierLearningRepo
 import moe.desupon.brain.port.TierPlanner
 import moe.desupon.brain.probe.ProbeActivity
 import moe.desupon.config.ConfigGenerator
+import moe.desupon.config.LocalRuleSet
 import moe.desupon.model.Secret
 import moe.desupon.model.network.NetworkHandle
 import moe.desupon.model.network.NetworkKey
@@ -338,6 +340,8 @@ class Harness(
     val split = FakeSplit()
     val settings = FakeSettings()
     val selection = FakeSelection()
+    /** Not a StateFlow, so an equal map still reaches the brain and tests see its own filtering. */
+    val ruleSets = MutableSharedFlow<Map<String, LocalRuleSet>>(replay = 1).apply { tryEmit(emptyMap()) }
     val activity = ProbeActivity(clock)
     val brain = SelectorBrain(
         libbox = libbox,
@@ -355,6 +359,7 @@ class Harness(
         clock = clock,
         scope = test.backgroundScope,
         config = config,
+        ruleSets = ruleSets,
         selectionPort = selection,
         activity = activity,
     )
