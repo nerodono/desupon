@@ -23,6 +23,7 @@ import android.net.ConnectivityManager
 import android.net.IpPrefix
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.Process
@@ -93,26 +94,7 @@ class CorePlatform(
             // Unmetered by itself, the VPN is metered exactly when its underlying network is.
             .setMetered(false)
             .setUnderlyingNetworks(underlyingOf(observer.current.value))
-        for (address in spec.addresses) builder.addAddress(address.address, address.length)
-        for (dns in spec.dnsServers) builder.addDnsServer(dns)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            for (route in spec.routes) builder.addRoute(route.toIpPrefix())
-            for (route in spec.excludeRoutes) builder.excludeRoute(route.toIpPrefix())
-        } else {
-            for (route in spec.routes) builder.addRoute(route.address, route.length)
-        }
-        for (pkg in spec.allowedApps) {
-            try {
-                builder.addAllowedApplication(pkg)
-            } catch (_: PackageManager.NameNotFoundException) {
-            }
-        }
-        for (pkg in spec.disallowedApps) {
-            try {
-                builder.addDisallowedApplication(pkg)
-            } catch (_: PackageManager.NameNotFoundException) {
-            }
-        }
+        spec.applyTo(builder)
         val pfd = builder.establish() ?: error("android: the application is not prepared or is revoked")
         // The old interface stays open until its replacement exists, so the system can hand over in place.
         val previous = synchronized(tunLock) {
@@ -274,6 +256,30 @@ class CorePlatform(
 }
 
 internal fun underlyingOf(network: UnderlyingNetwork?): Array<Network>? = network?.let { arrayOf(it.network) }
+
+/** Never `allowFamily`: a family the spec leaves out must stay blocked for tunnelled apps. */
+internal fun TunSpec.applyTo(builder: VpnService.Builder) {
+    for (address in addresses) builder.addAddress(address.address, address.length)
+    for (dns in dnsServers) builder.addDnsServer(dns)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        for (route in routes) builder.addRoute(route.toIpPrefix())
+        for (route in excludeRoutes) builder.excludeRoute(route.toIpPrefix())
+    } else {
+        for (route in routes) builder.addRoute(route.address, route.length)
+    }
+    for (pkg in allowedApps) {
+        try {
+            builder.addAllowedApplication(pkg)
+        } catch (_: PackageManager.NameNotFoundException) {
+        }
+    }
+    for (pkg in disallowedApps) {
+        try {
+            builder.addDisallowedApplication(pkg)
+        } catch (_: PackageManager.NameNotFoundException) {
+        }
+    }
+}
 
 internal class StringArray(values: List<String>) : StringIterator {
     private val size = values.size

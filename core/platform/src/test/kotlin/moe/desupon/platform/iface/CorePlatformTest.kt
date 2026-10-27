@@ -1,6 +1,7 @@
 package moe.desupon.platform.iface
 
 import android.content.Context
+import android.net.IpPrefix
 import android.net.Network
 import android.net.VpnService
 import androidx.test.core.app.ApplicationProvider
@@ -9,6 +10,7 @@ import moe.desupon.platform.net.NetworkObserver
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.net.InetAddress
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
@@ -53,5 +55,71 @@ class CorePlatformTest {
     @Test
     fun noUnderlyingNetworkLeavesTheChoiceToTheSystem() {
         assertNull(underlyingOf(null))
+    }
+
+    private class RecordingVpn : VpnService() {
+        val calls = mutableListOf<String>()
+
+        inner class Recorder : Builder() {
+            override fun addAddress(address: String, prefixLength: Int) = record("address $address/$prefixLength")
+
+            override fun addAddress(address: InetAddress, prefixLength: Int) = record("address ${address.hostAddress}/$prefixLength")
+
+            override fun addRoute(address: String, prefixLength: Int) = record("route $address/$prefixLength")
+
+            override fun addRoute(address: InetAddress, prefixLength: Int) = record("route ${address.hostAddress}/$prefixLength")
+
+            override fun addRoute(prefix: IpPrefix) = record("route $prefix")
+
+            override fun excludeRoute(prefix: IpPrefix) = record("exclude $prefix")
+
+            override fun addDnsServer(address: String) = record("dns $address")
+
+            override fun addDnsServer(address: InetAddress) = record("dns ${address.hostAddress}")
+
+            override fun allowFamily(family: Int) = record("allowFamily $family")
+
+            override fun addAllowedApplication(packageName: String) = record("allow $packageName")
+
+            override fun addDisallowedApplication(packageName: String) = record("disallow $packageName")
+
+            private fun record(call: String): Builder = also { calls += call }
+        }
+    }
+
+    /** What the core asks for under IPv4 only: an IPv4 address, its DNS next to it and LAN excludes of both families. */
+    @Test
+    fun ipv4OnlyTunHandsTheBuilderNoIpv6ExceptExcludesAndNeverAllowsAFamily() {
+        val request = TunRequest(
+            mtu = 1500,
+            autoRoute = true,
+            dnsDisabled = false,
+            dnsServers = listOf("198.19.250.2"),
+            inet4Address = listOf(Prefix("198.19.250.1", 30)),
+            inet6Address = emptyList(),
+            inet4RouteAddress = emptyList(),
+            inet6RouteAddress = emptyList(),
+            inet4RouteExcludeAddress = listOf(Prefix("10.0.0.0", 8), Prefix("192.168.0.0", 16)),
+            inet6RouteExcludeAddress = listOf(Prefix("fc00::", 7), Prefix("fe80::", 10)),
+            inet4RouteRange = emptyList(),
+            inet6RouteRange = emptyList(),
+            includePackage = emptyList(),
+            excludePackage = listOf("org.example.bank"),
+        )
+        val vpn = RecordingVpn()
+        TunSpec.of(request).applyTo(vpn.Recorder())
+        assertEquals(
+            listOf(
+                "address 198.19.250.1/30",
+                "dns 198.19.250.2",
+                "route 0.0.0.0/0",
+                "exclude 10.0.0.0/8",
+                "exclude 192.168.0.0/16",
+                "exclude fc00:0:0:0:0:0:0:0/7",
+                "exclude fe80:0:0:0:0:0:0:0/10",
+                "disallow org.example.bank",
+            ),
+            vpn.calls,
+        )
     }
 }

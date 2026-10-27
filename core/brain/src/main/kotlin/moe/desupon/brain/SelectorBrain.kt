@@ -381,7 +381,7 @@ class SelectorBrain(
                 }
             }
             val placeholder = try {
-                configGen.placeholderConfig(split.settings.lanBypass)
+                configGen.placeholderConfig(split.settings.lanBypass, ipv4Only = split.settings.dns.ipv4Only)
             } catch (_: ConfigException) {
                 throw Fatal(FailReason.CONFIG)
             }
@@ -1007,7 +1007,7 @@ class SelectorBrain(
             } catch (_: ConfigException) {
                 return emptyMap()
             }
-            val request = poolRequest(config, probe.json, on, nodes.associate { it.id.tag to (timeouts[it.id.tag] ?: config.unknownTimeoutMs(on.key.transport)) })
+            val request = poolRequest(config, probe.json, on, dns, nodes.associate { it.id.tag to (timeouts[it.id.tag] ?: config.unknownTimeoutMs(on.key.transport)) })
             val byTag = nodes.associateBy { it.id.tag }
             val raw = guard(emptyMap()) { prober.probePool(request, protector) }
             return raw.entries.mapNotNull { (tag, r) -> byTag[tag]?.let { it.id to r } }.toMap()

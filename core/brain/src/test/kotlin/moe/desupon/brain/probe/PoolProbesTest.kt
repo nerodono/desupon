@@ -21,7 +21,10 @@ import moe.desupon.brain.netEvent
 import moe.desupon.brain.port.PoolSelection
 import moe.desupon.brain.tag
 import moe.desupon.config.ConfigGenerator
+import moe.desupon.model.network.DnsSettings
+import moe.desupon.model.network.DnsStrategy
 import moe.desupon.model.network.Transport
+import moe.desupon.model.routing.ConnectionSettings
 import moe.desupon.model.selection.LocationChoice
 import moe.desupon.model.selection.SetId
 import moe.desupon.model.subscription.SubId
@@ -165,5 +168,21 @@ class PoolProbesTest {
 
         selection.selection.value = PoolSelection(SetId(4), emptySet())
         assertIs<ProbeRequestResult.NoNodes>(probe.run())
+    }
+
+    @Test
+    fun `off-tunnel probe skips AAAA on an IPv6 network when the user turned IPv6 off`() = runTest {
+        val clock = FakeClock(testScheduler)
+        val prober = FakeProber(Journal())
+        val settings = FakeSettings()
+        val probe = OffTunnelPoolProbe(
+            prober, ConfigGenerator(), FakeNodes(listOf(Nodes.ss("a"))), FakeSelection(), settings, FakeStats(),
+            network = { netEvent(WIFI, ipv6 = true) }, protector = { true }, activity = ProbeActivity(clock), clock = clock,
+        )
+
+        probe.run()
+        settings.settings.value = ConnectionSettings(dns = DnsSettings(strategy = DnsStrategy.IPV4_ONLY))
+        probe.run()
+        assertEquals(listOf(false, true), prober.poolRequests.map { it.ipv4Only })
     }
 }

@@ -68,6 +68,39 @@ class SettingsRepositoryTest {
         assertNull(r.subscriptionUserAgent.first())
     }
 
+    /** Every other writer the app has, then a process restart: only the switch itself and [SettingsRepository.resetAll] may clear it. */
+    @Test
+    fun ipv4OnlySurvivesEveryOtherWriterAndARestart() = runTest {
+        val r = repo()
+        r.setIpv4Only(true)
+        r.setTheme(ThemePreference.DARK)
+        r.setAmoled(true)
+        r.setDesuMode(true)
+        r.setDynamicColor(true)
+        r.setSimpleMode(true)
+        r.setSimpleMode(false)
+        r.setSplitMode(SplitMode.ONLY_SELECTED)
+        r.setSplitPackages(SplitMode.ONLY_SELECTED, setOf("org.example.app"))
+        r.setPackageSelected(SplitMode.ALL_EXCEPT_SELECTED, "org.example.bank", selected = true)
+        r.setBypassPrefixes(listOf("by."))
+        r.setPrefixBypassEnabled(false)
+        r.setForceTunnel("ru.example.bank", forced = true)
+        r.setAppBypassed("org.example.other", bypassed = true)
+        r.setShowSystemApps(true)
+        r.setLanBypass(false)
+        r.setDnsRemote("tls://dns.example")
+        r.setSubscriptionUserAgent("UA/3")
+        r.setNotificationPromptShown()
+        r.setBatteryPromptShown()
+        r.resetAppSplitToDefaults()
+        assertTrue(r.settings.first().dns.ipv4Only)
+
+        val reopened = SettingsRepository(SettingsRepository.createDataStore(File(tmp.root, "copy.preferences_pb").also { file.copyTo(it) }))
+        assertTrue(reopened.settings.first().dns.ipv4Only)
+        r.setIpv4Only(false)
+        assertFalse(r.settings.first().dns.ipv4Only)
+    }
+
     @Test
     fun eachSplitModeKeepsItsOwnPackages() = runTest {
         val r = repo()

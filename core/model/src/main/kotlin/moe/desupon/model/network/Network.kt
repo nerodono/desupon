@@ -42,6 +42,9 @@ data class DnsSettings(
     val remote: String = DEFAULT_REMOTE,
     val strategy: DnsStrategy = DnsStrategy.PREFER_IPV4,
 ) {
+    /** The user's IPv4-only setting: besides DNS, it keeps IPv6 out of the tunnel and the probes. */
+    val ipv4Only: Boolean get() = strategy == DnsStrategy.IPV4_ONLY
+
     companion object {
         const val DEFAULT_REMOTE = "https://1.1.1.1/dns-query"
     }
