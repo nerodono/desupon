@@ -862,6 +862,128 @@ class SelectorBrainTest {
     }
 
     @Test
+    fun `wake resets the core and checks the current node at once`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val h = Harness(this, listOf(d1))
+        h.alive(d1)
+        h.connectOn(WIFI)
+        advance(600_000)
+        h.journal.entries.clear()
+
+        h.brain.onWake()
+        runCurrent()
+
+        assertEquals(listOf("reset", "probeLive:${d1.tag}"), h.journal.entries)
+        h.assertOn(d1)
+    }
+
+    @Test
+    fun `wake retries a degraded session at once`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val h = Harness(this, listOf(d1))
+        h.connectOn(WIFI, NetworkMode.OFFLINE)
+        assertIs<ConnState.Degraded>(h.brain.state.value)
+        h.alive(d1)
+        advance(10_000)
+
+        h.brain.onWake()
+        runCurrent()
+
+        h.assertOn(d1)
+        assertEquals(10_000L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun `a failure right after wake resets the core again and leaves no mark once confirmed good`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val d2 = Nodes.ss("d2")
+        val h = Harness(this, listOf(d1, d2))
+        h.alive(d1, d2)
+        h.rtt(d1 to 10, d2 to 20)
+        h.connectOn(WIFI)
+        advance(600_000)
+        val before = h.stats.map.getValue(WIFI to d1.id)
+
+        h.prober.liveDead += d1.tag
+        h.brain.onWake()
+        runCurrent()
+        assertEquals(2, h.libbox.resets)
+        h.prober.liveDead.clear()
+        advance(3_000)
+
+        h.assertOn(d1)
+        val after = h.stats.map.getValue(WIFI to d1.id)
+        assertEquals(before.fail, after.fail)
+        assertEquals(0, after.failStreak)
+    }
+
+    @Test
+    fun `failover inside the wake grace window keeps the last good node until the new one passes after it`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val d2 = Nodes.ss("d2")
+        val h = Harness(this, listOf(d1, d2))
+        h.alive(d1, d2)
+        h.rtt(d1 to 10, d2 to 20)
+        h.connectOn(WIFI)
+        h.libbox.traffic(true)
+        advance(600_000)
+        val failsBefore = h.stats.map.getValue(WIFI to d1.id).fail
+
+        h.kill(d1)
+        h.brain.onWake()
+        runCurrent()
+        advance(3_000)
+
+        h.assertOn(d2)
+        assertEquals(d1.id, h.memory.map.getValue(WIFI).lastGood)
+        assertEquals(failsBefore, h.stats.map.getValue(WIFI to d1.id).fail)
+
+        advance(45_000)
+        h.assertOn(d2)
+        assertEquals(d2.id, h.memory.map.getValue(WIFI).lastGood)
+    }
+
+    @Test
+    fun `a first failure resets the core before the confirmation probe, at most once a minute`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val d2 = Nodes.ss("d2")
+        val h = Harness(this, listOf(d1, d2))
+        h.alive(d1, d2)
+        h.rtt(d1 to 10, d2 to 20)
+        h.connectOn(WIFI)
+        h.libbox.traffic(true)
+        advance(60_000)
+        h.kill(d1)
+        h.journal.entries.clear()
+
+        advance(30_000)
+        assertEquals(listOf("probeLive:${d1.tag}", "reset"), h.journal.entries)
+        h.alive(d1)
+        advance(3_000)
+        h.assertOn(d1)
+
+        h.kill(d1)
+        advance(45_000)
+        h.assertOn(d2)
+        assertEquals(1, h.libbox.resets)
+    }
+
+    @Test
+    fun `a failure soon after a reload is confirmed without a reset`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val d2 = Nodes.ss("d2")
+        val h = Harness(this, listOf(d1, d2))
+        h.alive(d1, d2)
+        h.rtt(d1 to 10, d2 to 20)
+        h.connectOn(WIFI)
+        h.libbox.traffic(true)
+        h.kill(d1)
+        advance(48_000)
+        h.assertOn(d2)
+        assertEquals(0, h.libbox.resets)
+    }
+
+    @Test
     fun `disconnect does not wait for a pool probe in flight`() = runTest {
         val d1 = Nodes.ss("d1")
         val h = Harness(this, listOf(d1))

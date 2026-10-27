@@ -1,5 +1,6 @@
 package moe.desupon.vpn.lifecycle
 
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -15,10 +16,11 @@ import kotlin.test.assertTrue
 class AutoRetryTest {
     private val enabled = MutableStateFlow<Boolean?>(true)
     private val network = MutableStateFlow<Any?>("wifi")
+    private val wakes = MutableSharedFlow<Long>(extraBufferCapacity = 1)
     private var retries = 0
     private var giveUps = 0
 
-    private fun TestScope.retry() = AutoRetry(backgroundScope, enabled, network)
+    private fun TestScope.retry() = AutoRetry(backgroundScope, enabled, network, wakes)
 
     private fun AutoRetry.fail() = schedule(retry = { retries++ }, giveUp = { giveUps++ })
 
@@ -53,6 +55,23 @@ class AutoRetryTest {
         runCurrent()
         assertEquals(0, retries)
         network.value = "cell"
+        runCurrent()
+        assertEquals(1, retries)
+        assertFalse(r.waiting)
+
+        r.fail()
+        assertFiresAfter(60_000)
+    }
+
+    @Test
+    fun `a wake from a long sleep retries at once`() = runTest {
+        val r = retry()
+        wakes.tryEmit(60_000)
+        r.fail()
+        runCurrent()
+        assertEquals(0, retries, "a wake before the wait")
+
+        wakes.tryEmit(60_000)
         runCurrent()
         assertEquals(1, retries)
         assertFalse(r.waiting)

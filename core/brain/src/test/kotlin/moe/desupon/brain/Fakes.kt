@@ -126,6 +126,8 @@ class FakeLibbox(private val journal: Journal) : LibboxControl {
         /** The no-node config that holds the TUN up while the pool is probed. */
         data class Placeholder(val json: String) : Call
 
+        data object ResetNetwork : Call
+
         data object Stop : Call
     }
 
@@ -136,12 +138,16 @@ class FakeLibbox(private val journal: Journal) : LibboxControl {
     var failNextReloads = 0
     var failPlaceholder = false
 
+    /** Runs on each network reset, e.g. to revive nodes that failed only through stale connections. */
+    var onReset: (() -> Unit)? = null
+
     override val groups = MutableStateFlow<List<GroupInfo>>(emptyList())
     override val status = MutableStateFlow(TrafficStatus(0, 0, 0, 0, 0, 0))
     override val connections = MutableStateFlow<List<ConnInfo>>(emptyList())
 
     val reloads: List<Call.Reload> get() = calls.filterIsInstance<Call.Reload>()
     val selected: String? get() = calls.filterIsInstance<Call.Select>().lastOrNull()?.tag
+    val resets: Int get() = calls.count { it == Call.ResetNetwork }
 
     override suspend fun reload(configJson: String, apps: AppSplit) {
         if (PLACEHOLDER in configJson) {
@@ -165,6 +171,12 @@ class FakeLibbox(private val journal: Journal) : LibboxControl {
     }
 
     override suspend fun closeConnections() = Unit
+
+    override suspend fun resetNetwork() {
+        journal += "reset"
+        calls += Call.ResetNetwork
+        onReset?.invoke()
+    }
 
     override suspend fun stop() {
         journal += "stop"

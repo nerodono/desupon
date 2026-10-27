@@ -128,6 +128,8 @@ class InstalledSplitTest {
 
         override suspend fun closeConnections() {}
 
+        override suspend fun resetNetwork() {}
+
         override suspend fun stop() {}
     }
 }

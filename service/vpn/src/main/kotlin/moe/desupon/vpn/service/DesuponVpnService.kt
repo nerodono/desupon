@@ -20,10 +20,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -33,6 +35,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -52,11 +55,13 @@ import moe.desupon.data.settings.SettingsRepository
 import moe.desupon.model.node.Node
 import moe.desupon.platform.iface.VpnHost
 import moe.desupon.platform.libbox.CoreRuntime
+import moe.desupon.platform.log.CoreLogLevel
 import moe.desupon.platform.net.NetworkObserver
 import moe.desupon.vpn.R
 import moe.desupon.vpn.lifecycle.AutoRetry
 import moe.desupon.vpn.lifecycle.VpnFailReason
 import moe.desupon.vpn.lifecycle.VpnStateHolder
+import moe.desupon.vpn.lifecycle.WakeDetector
 import moe.desupon.vpn.notify.StatusContent
 import moe.desupon.vpn.notify.StatusFeed
 import moe.desupon.vpn.notify.StatusNotification
@@ -100,6 +105,15 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
     private var screenReceiver: BroadcastReceiver? = null
     private var feed: Job? = null
     private val receivers = mutableListOf<BroadcastReceiver>()
+    private var wakeWatch: Job? = null
+    private var wakeReceiver: BroadcastReceiver? = null
+    private val wakeChecks = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** How long the device slept, on each wake from a sleep long enough for tunnel state to die; see [WakeDetector]. */
+    private val wakes = MutableSharedFlow<Long>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** Pause and wake reach the core in the order the system reported them. */
+    private val powerCalls = Dispatchers.IO.limitedParallelism(1)
 
     override val sessionLabel: String get() = getString(R.string.svc_session_label)
 
@@ -121,6 +135,7 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
         destroyed = true
         if (session != null || autoRetry?.waiting == true) stop(null)
         stopFeed()
+        stopWakeWatch()
         scope.cancel()
         super.onDestroy()
     }
@@ -165,11 +180,12 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
         autoRetry?.cancelWait()
         if (autoRetry == null) {
             val simpleMode = preferences.simpleMode.stateIn<Boolean?>(scope, SharingStarted.Eagerly, null)
-            autoRetry = AutoRetry(scope, simpleMode, observer.current.map { it?.key })
+            autoRetry = AutoRetry(scope, simpleMode, observer.current.map { it?.key }, wakes)
         }
         stopRequested = false
         holder.starting()
         startFeed()
+        startWakeWatch()
         holder.bindStop { scope.launch { stop(null) } }
         brainWasActive = false
         session = scope.launch { runSession() }
@@ -194,6 +210,12 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
                         .map { it?.let { n -> BrainEvent.NetworkChanged(n.key, n.handle, n.dnsServers, n.ipv6) } ?: BrainEvent.NetworkLost }
                         .distinctUntilChanged()
                         .collect(b::onEvent)
+                }
+                launch {
+                    wakes.collect { slept ->
+                        runtime.log(CoreLogLevel.INFO, "woke after ${slept / 1_000} s asleep, resetting the network")
+                        b.onWake()
+                    }
                 }
                 registerReceivers(b)
                 b.connect()
@@ -277,6 +299,7 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
 
     private fun finish() {
         stopFeed()
+        stopWakeWatch()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -314,6 +337,37 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
         screenReceiver = null
     }
 
+    /** Spans retries like the feed, so a wake also cuts a retry wait short. */
+    private fun startWakeWatch() {
+        if (wakeWatch != null) return
+        val power = getSystemService(PowerManager::class.java)
+        wakeReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val awake = when (intent.action) {
+                    Intent.ACTION_SCREEN_ON -> true
+                    PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> !power.isDeviceIdleMode
+                    else -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !power.isDeviceLightIdleMode
+                }
+                if (awake) wakeChecks.tryEmit(Unit)
+            }
+        }.also {
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) addAction(PowerManager.ACTION_DEVICE_LIGHT_IDLE_MODE_CHANGED)
+            }
+            ContextCompat.registerReceiver(this, it, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        }
+        wakeWatch = scope.launch { WakeDetector().wakes(merge(wakeChecks, observer.unblocked)).collect(wakes::emit) }
+    }
+
+    private fun stopWakeWatch() {
+        wakeWatch?.cancel()
+        wakeWatch = null
+        wakeReceiver?.let { runCatching { unregisterReceiver(it) } }
+        wakeReceiver = null
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun rttOf(node: Node): Flow<Int?> = observer.current.map { it?.key }.distinctUntilChanged().flatMapLatest { key ->
         if (key == null) flowOf(null) else probeStats.observe(key).map { warmRtt(it, node) }
@@ -327,7 +381,7 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
         }
         register(IntentFilter(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)) {
             val idle = power.isDeviceIdleMode
-            scope.launch(Dispatchers.IO) { runCatching { if (idle) runtime.pause() else runtime.wake() } }
+            scope.launch(powerCalls) { runCatching { if (idle) runtime.pause() else runtime.wake() } }
         }
         register(IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addDataScheme("package") }) { intent ->
             val added = addedPackage(intent) ?: return@register

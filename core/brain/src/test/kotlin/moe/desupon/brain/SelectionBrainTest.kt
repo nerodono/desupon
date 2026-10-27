@@ -93,6 +93,27 @@ class SelectionBrainTest {
     }
 
     @Test
+    fun `picking a loaded node that fails only through stale connections resets the core and probes it again`() = runTest {
+        val a = Nodes.ss("a")
+        val b = Nodes.ss("b")
+        val h = Harness(this, listOf(a, b))
+        h.alive(a, b)
+        h.rtt(a to 10, b to 20)
+        h.connectOn(WIFI)
+        h.assertOn(a)
+        advance(120_000)
+        h.prober.liveDead += b.tag
+        h.libbox.onReset = { h.prober.liveDead.clear() }
+
+        h.select(LocationChoice.Node(b.id))
+        runCurrent()
+
+        h.assertOn(b)
+        assertEquals(1, h.libbox.resets)
+        assertEquals(1, h.libbox.reloads.size)
+    }
+
+    @Test
     fun `country choice keeps selection and failover inside the country`() = runTest {
         val nl1 = Nodes.ss("nl1", country = "NL")
         val de1 = Nodes.ss("de1", country = "DE")

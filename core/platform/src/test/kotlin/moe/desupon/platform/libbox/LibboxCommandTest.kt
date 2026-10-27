@@ -37,6 +37,10 @@ class LibboxCommandTest {
             calls += "closeConnections"
         }
 
+        override fun resetNetwork() {
+            calls += "resetNetwork"
+        }
+
         override fun closeService() {
             calls += "closeService"
         }
@@ -80,16 +84,27 @@ class LibboxCommandTest {
     }
 
     @Test
-    fun selectAndCloseGoToTheServerWhileTheClientReconnects() = runBlocking<Unit> {
+    fun controlCallsGoToTheServerWhileTheClientReconnects() = runBlocking<Unit> {
         core.connectGate = CountDownLatch(1)
         val cmd = command(dialWaitMs = 50)
         cmd.reload("{}", AppSplit())
         cmd.select("proxy", "n-0000000000000001")
         cmd.closeConnections()
+        cmd.resetNetwork()
         assertFalse("connected" in core.calls, "control calls waited for the client")
         assertTrue("select:proxy/n-0000000000000001" in core.calls)
         assertTrue("closeConnections" in core.calls)
+        assertTrue("resetNetwork" in core.calls)
         core.connectGate.countDown()
+    }
+
+    @Test
+    fun failedResetThrowsCoreException() = runBlocking<Unit> {
+        val failing = object : CoreGateway by core {
+            override fun resetNetwork(): Unit = error("core: service not started")
+        }
+        val cmd = LibboxCommand(failing, "moe.desupon.app", Dispatchers.IO)
+        assertFailsWith<CoreException> { cmd.resetNetwork() }
     }
 
     @Test

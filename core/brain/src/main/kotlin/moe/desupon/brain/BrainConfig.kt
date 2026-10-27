@@ -31,6 +31,10 @@ data class BrainConfig(
     /** Re-probe after a single failure instead of waiting for the next check. */
     val confirmDelayMs: Long = 3_000,
     val failuresToSwitch: Int = 2,
+    /** A failing current node gets a core network reset before its confirmation probe, at most once per this long. */
+    val resetCooldownMs: Long = 60_000,
+    /** After a wake from a long sleep, probe failures neither persist nor move the last good node for this long. */
+    val wakeGraceMs: Long = 20_000,
     val flapWindowMs: Long = 5 * 60_000L,
     val maxSwitchesPerWindow: Int = 3,
     val upwardChecks: Int = 3,
