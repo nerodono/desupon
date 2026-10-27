@@ -20,8 +20,8 @@ Desupon detects when a mobile carrier switches to whitelist-only access and choo
 
 ### ⛓️ Priorities and sets
 
-- **Priorities**: drag subscriptions into order, e.g. "try this one first, then that one". Desupon stays on the first one while it works.
-- **Sets** choose which subscriptions take part in automatic selection. The country is chosen separately, at any time.
+- **Priorities**: drag subscriptions and configs into one order, e.g. "try this one first, then that one". Desupon stays on the first one while it works.
+- **Sets** choose which subscriptions and configs take part in automatic selection. The country is chosen separately, at any time.
 
 ### 🗺️ Countries and servers
 
@@ -31,7 +31,14 @@ Tap the bottom bar to open the list of countries with their ping. The ping is "w
 
 - Send all apps through the VPN, only the selected ones, or all except the selected ones.
 - Russian banking, marketplace and government-services apps, plus every `ru.*` / `su.*` package, bypass the VPN by default.
-- Rules by domain, IP and bundled rule sets.
+- Rules by domain, IP and rule sets: the bundled ones, or any category from the geoip / geosite databases below.
+- **IPv4 only** removes IPv6 from the tunnel: tunneled apps get no IPv6 at all, and DNS returns no IPv6 addresses.
+
+### 🌐 geoip / geosite databases
+
+- Desupon downloads v2ray-format `geoip.dat` and `geosite.dat` and turns their categories (e.g. `ru-blocked`, `category-ads-all`) into rule sets you can pick in split-tunnel rules, with search.
+- By default it uses [runetfreedom/russia-v2ray-rules-dat](https://github.com/runetfreedom/russia-v2ray-rules-dat), checks every 5 days and downloads only over Wi-Fi. The URLs, the interval and the Wi-Fi limit are all configurable, and there is an **Update now** button.
+- Downloads are verified against the published checksum and replace the old files only when they are valid. Categories already in use are refreshed in place, without reconnecting.
 
 ### 🕵️ Private by default
 
@@ -58,12 +65,20 @@ The notification shows the country, ping, speed and session traffic. On the lock
 
 Desupon asks for the battery-optimization exemption it needs. On Honor and Huawei phones it points you to the autostart settings. With Android's **Always-on VPN** enabled, it starts by itself after a reboot.
 
+When the phone wakes up after a long sleep, Desupon drops connections that went stale while it slept (for example Hysteria2 sessions the server already forgot) and reconnects at once, instead of waiting for them to time out.
+
 ### 📥 Subscriptions and protocols
 
 - Add a subscription by link, from the clipboard, by scanning a QR code with the camera, from a photo of a QR code, or by sharing text to Desupon from another app. None of this needs Google services.
 - Subscription URL mirrors and automatic updates.
 - Protocols: VLESS (REALITY, XHTTP), VMess, Trojan, Shadowsocks, Hysteria2 (salamander and gecko obfuscation), TUIC, Juicity, AnyTLS, WireGuard / AmneziaWG, SOCKS / HTTP.
 - Subscription formats: share-link lists (plain or base64), sing-box JSON, Xray JSON, Clash / mihomo YAML, SIP008, and WireGuard / AmneziaWG `.conf` files.
+
+### 🔑 Configs
+
+- Single server configs live on their own **Configs** tab, separate from subscriptions. Add them by link, from the clipboard, by QR code from the camera or a photo, or by sharing text to Desupon.
+- Enter a config by hand with a per-protocol form (VLESS with REALITY / XHTTP, VMess, Trojan, Shadowsocks, Hysteria2, TUIC), or as a share link or sing-box JSON in a text editor with live checking.
+- Edit saved configs the same way. Fields the form doesn't show are kept as they are.
 
 ### 🎨 Appearance
 
@@ -80,7 +95,7 @@ Dark, light and AMOLED themes, plus Material You colors on Android 12+. There is
    - `arm64-v8a` for most phones from recent years;
    - `armeabi-v7a` for older 32-bit devices.
 2. Install it and open Desupon.
-3. Add a subscription: paste the link, scan its QR code, or share it to Desupon.
+3. Add a subscription on the **Subscriptions** tab (paste the link, scan its QR code, or share it to Desupon), or a single server on the **Configs** tab.
 4. Press **Connect** and allow the VPN connection when Android asks.
 
 💡 To have the VPN come up after every reboot, turn on **Always-on VPN** for Desupon in Android's VPN settings.
@@ -117,6 +132,7 @@ nix develop
 - [sing-box-extended](https://github.com/shtorm-7/sing-box-extended)
 - [sing-juicity](https://github.com/exclavenetwork/sing-juicity)
 - Rule sets from [sing-geosite](https://github.com/SagerNet/sing-geosite) and [sing-geoip](https://github.com/SagerNet/sing-geoip); see `data/src/main/assets/ruleset/NOTICE`
+- Default geoip / geosite databases from [runetfreedom/russia-v2ray-rules-dat](https://github.com/runetfreedom/russia-v2ray-rules-dat)
 - The default per-app bypass list is adapted from [turn-proxy-android](https://github.com/hackdiaz-dev/turn-proxy-android)
 - Parts of the Android platform code are derived from shadowsocks-android and SagerNet; see the file headers
 
