@@ -65,7 +65,7 @@ The notification shows the country, ping, speed and session traffic. On the lock
 
 Desupon asks for the battery-optimization exemption it needs. On Honor and Huawei phones it points you to the autostart settings. With Android's **Always-on VPN** enabled, it starts by itself after a reboot.
 
-When the phone wakes up after a long sleep, Desupon drops connections that went stale while it slept (for example Hysteria2 sessions the server already forgot) and reconnects at once, instead of waiting for them to time out.
+When the phone wakes up, Desupon restarts only the sessions the sleep may have killed (QUIC-based ones such as TUIC, or Hysteria2 sessions the server already forgot) instead of waiting for them to time out. If a Hysteria2 server stops answering while the phone is awake, new connections move to a fresh session within seconds, and the existing ones get a moment to recover first.
 
 ### 📥 Subscriptions and protocols
 
