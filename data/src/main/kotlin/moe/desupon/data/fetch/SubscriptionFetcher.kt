@@ -262,7 +262,7 @@ class SubscriptionFetcher(
     }
 }
 
-private suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
+internal suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
     cont.invokeOnCancellation { cancel() }
     enqueue(
         object : Callback {

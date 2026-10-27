@@ -4,6 +4,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -97,6 +100,36 @@ internal fun ChevronRow(
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/** A titled row whose choices, typically chips, wrap under the title. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun ChoiceRow(
+    title: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    enabled: Boolean = true,
+    choices: @Composable FlowRowScope.() -> Unit,
+) {
+    val alpha = if (enabled) 1f else DISABLED_ALPHA
+    Row(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        if (icon != null) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
+                modifier = Modifier.size(24.dp),
+            )
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), content = choices)
+        }
     }
 }
 

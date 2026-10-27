@@ -85,7 +85,7 @@ class RuleValidatorTest {
     }
 
     @Test
-    fun ruleSetMustBeBundled() {
+    fun ruleSetMustBeAvailable() {
         assertEquals("geoip-ru", valid(SplitRuleKind.RULE_SET, "geoip-ru"))
         assertEquals(RuleError.UNKNOWN_RULE_SET, error(SplitRuleKind.RULE_SET, "geosite-cn"))
     }

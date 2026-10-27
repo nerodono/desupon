@@ -73,6 +73,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import moe.desupon.data.ruleset.RuleSetInfo
 import moe.desupon.data.settings.PrefixRule
 import moe.desupon.feature.settings.logic.AppRowState
 import moe.desupon.feature.settings.logic.PrefixError
@@ -84,7 +85,7 @@ import moe.desupon.feature.settings.ui.SettingsGlyphs
 import moe.desupon.feature.settings.ui.SwitchRow
 import moe.desupon.feature.settings.ui.actionLabel
 import moe.desupon.feature.settings.ui.kindLabel
-import moe.desupon.feature.settings.ui.ruleSetLabel
+import moe.desupon.feature.settings.ui.ruleSetTitle
 import moe.desupon.model.routing.SplitMode
 import moe.desupon.model.routing.SplitRule
 import moe.desupon.model.routing.SplitRuleKind
@@ -106,6 +107,8 @@ fun SplitTunnelScreen(
     var creating by rememberSaveable { mutableStateOf(false) }
     val apps by viewModel.apps.collectAsStateWithLifecycle()
     val rules by viewModel.rules.collectAsStateWithLifecycle()
+    val ruleSets by viewModel.ruleSets.collectAsStateWithLifecycle()
+    val usableRuleSets by viewModel.usableRuleSets.collectAsStateWithLifecycle()
 
     Scaffold(
         modifier = modifier,
@@ -171,7 +174,7 @@ fun SplitTunnelScreen(
         ) {
             when (tab) {
                 SplitTab.APPS -> appsTab(apps, viewModel)
-                SplitTab.RULES -> rulesTab(rules, viewModel, onEdit = { editing = it.id })
+                SplitTab.RULES -> rulesTab(rules, ruleSets, usableRuleSets, viewModel, onEdit = { editing = it.id })
             }
         }
     }
@@ -197,7 +200,7 @@ fun SplitTunnelScreen(
     if (creating || editedRule != null) {
         RuleEditDialog(
             initial = editedRule,
-            ruleSetNames = viewModel.ruleSetNames,
+            ruleSets = ruleSets,
             onDismiss = {
                 creating = false
                 editing = null
@@ -476,7 +479,14 @@ private fun prefixErrorText(error: PrefixError): String = stringResource(
 )
 
 
-private fun LazyListScope.rulesTab(rules: List<SplitRule>, viewModel: SplitTunnelViewModel, onEdit: (SplitRule) -> Unit) {
+private fun LazyListScope.rulesTab(
+    rules: List<SplitRule>,
+    ruleSets: List<RuleSetInfo>,
+    usableRuleSets: Set<String>,
+    viewModel: SplitTunnelViewModel,
+    onEdit: (SplitRule) -> Unit,
+) {
+    val infos = ruleSets.associateBy { it.name }
     item(key = "hint") {
         Text(
             stringResource(R.string.rules_hint),
@@ -496,8 +506,11 @@ private fun LazyListScope.rulesTab(rules: List<SplitRule>, viewModel: SplitTunne
         return
     }
     itemsIndexed(rules, key = { _, rule -> rule.id }) { index, rule ->
+        val set = rule.value.trim()
         RuleCard(
             rule = rule,
+            ruleSet = if (rule.kind == SplitRuleKind.RULE_SET) infos[set] else null,
+            unavailable = rule.kind == SplitRuleKind.RULE_SET && (set !in infos || (rule.enabled && set !in usableRuleSets)),
             canMoveUp = index > 0,
             canMoveDown = index < rules.lastIndex,
             onEnabled = { viewModel.setRuleEnabled(rule, it) },
@@ -511,6 +524,8 @@ private fun LazyListScope.rulesTab(rules: List<SplitRule>, viewModel: SplitTunne
 @Composable
 private fun RuleCard(
     rule: SplitRule,
+    ruleSet: RuleSetInfo?,
+    unavailable: Boolean,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onEnabled: (Boolean) -> Unit,
@@ -525,7 +540,7 @@ private fun RuleCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                val title = if (rule.kind == SplitRuleKind.RULE_SET) ruleSetLabel(rule.value) ?: rule.value else rule.value
+                val title = if (rule.kind == SplitRuleKind.RULE_SET) ruleSetTitle(rule.value.trim(), ruleSet) else rule.value
                 Text(
                     title,
                     style = MaterialTheme.typography.bodyLarge,
@@ -538,6 +553,13 @@ private fun RuleCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
                 )
+                if (unavailable) {
+                    Text(
+                        stringResource(R.string.rule_set_unavailable),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
             Switch(checked = rule.enabled, onCheckedChange = onEnabled)
         }

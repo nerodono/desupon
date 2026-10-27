@@ -26,6 +26,7 @@ import moe.desupon.brain.port.TierLearningRepo
 import moe.desupon.brain.port.TierPlanner
 import moe.desupon.brain.probe.ProbeActivity
 import moe.desupon.config.ConfigGenerator
+import moe.desupon.config.LocalRuleSet
 import moe.desupon.model.Secret
 import moe.desupon.model.network.NetworkHandle
 import moe.desupon.model.network.NetworkKey
@@ -317,6 +318,7 @@ class Harness(
     val split = FakeSplit()
     val settings = FakeSettings()
     val selection = FakeSelection()
+    val ruleSets = MutableStateFlow<Map<String, LocalRuleSet>>(emptyMap())
     val activity = ProbeActivity(clock)
     val brain = SelectorBrain(
         libbox = libbox,
@@ -334,6 +336,7 @@ class Harness(
         clock = clock,
         scope = test.backgroundScope,
         config = config,
+        ruleSets = ruleSets,
         selectionPort = selection,
         activity = activity,
     )

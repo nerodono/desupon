@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import moe.desupon.data.repo.SplitRuleRepository
+import moe.desupon.data.ruleset.RuleSetInfo
+import moe.desupon.data.ruleset.RuleSetStore
 import moe.desupon.data.settings.PrefixRule
 import moe.desupon.data.settings.SettingsRepository
 import moe.desupon.feature.settings.apps.InstalledAppsSource
@@ -45,7 +47,7 @@ data class SplitAppsState(
 class SplitTunnelViewModel(
     private val settings: SettingsRepository,
     private val splitRules: SplitRuleRepository,
-    val ruleSetNames: List<String>,
+    private val ruleSetStore: RuleSetStore,
     private val appsSource: InstalledAppsSource,
     private val ownPackage: String,
 ) : ViewModel() {
@@ -84,6 +86,14 @@ class SplitTunnelViewModel(
     val rules: StateFlow<List<SplitRule>> = splitRules.rules
         .map { list -> list.sortedWith(compareBy({ it.order }, { it.id })) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
+
+    /** Bundled sets first, then the downloaded categories, whether converted yet or not. */
+    val ruleSets: StateFlow<List<RuleSetInfo>> = ruleSetStore.available
+
+    /** Names a config can use right now. */
+    val usableRuleSets: StateFlow<Set<String>> = ruleSetStore.sets
+        .map { it.keys }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ruleSetStore.sets.value.keys)
 
     suspend fun icon(packageName: String, sizePx: Int): ImageBitmap? = appsSource.icon(packageName, sizePx)
 
@@ -152,7 +162,7 @@ class SplitTunnelViewModel(
 
     /** Validates and stores a new rule (when [id] is null) or an edit; returns the validation outcome. */
     fun saveRule(id: Long?, kind: SplitRuleKind, value: String, action: SplitAction): RuleValidation {
-        val result = RuleValidator.validate(kind, value, ruleSetNames)
+        val result = RuleValidator.validate(kind, value, ruleSets.value.mapTo(HashSet()) { it.name })
         if (result !is RuleValidation.Valid) return result
         launch {
             val existing = id?.let { rid -> splitRules.rules.first().firstOrNull { it.id == rid } }

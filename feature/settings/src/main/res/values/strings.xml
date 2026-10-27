@@ -59,6 +59,66 @@
     <string name="settings_stealth">Скрытность включена всегда</string>
     <string name="settings_stealth_summary">Без локальных портов и заметных следов VPN-клиента</string>
 
+    <string name="settings_section_geo">Базы geoip/geosite</string>
+    <string name="settings_geo_auto">Автообновление баз</string>
+    <string name="settings_geo_auto_summary">Свежие категории для правил разделения трафика</string>
+    <string name="settings_geo_geoip_url">Адрес geoip.dat</string>
+    <string name="settings_geo_geosite_url">Адрес geosite.dat</string>
+    <string name="settings_geo_url_default">%1$s (по умолчанию)</string>
+    <string name="settings_geo_url_dialog_hint">Прямая http(s)-ссылка на файл в формате v2ray. Пусто — по умолчанию.</string>
+    <string name="settings_geo_url_invalid">Нужна ссылка http:// или https:// на файл</string>
+    <string name="settings_geo_interval">Проверять обновления</string>
+    <plurals name="settings_geo_interval_days">
+        <item quantity="one">%d день</item>
+        <item quantity="few">%d дня</item>
+        <item quantity="many">%d дней</item>
+        <item quantity="other">%d дня</item>
+    </plurals>
+    <string name="settings_geo_interval_manual">Вручную</string>
+    <string name="settings_geo_unmetered">Только Wi-Fi</string>
+    <string name="settings_geo_unmetered_summary">Не скачивать автоматически через мобильную сеть: вместе базы весят около 90 МБ</string>
+    <string name="settings_geo_update_now">Обновить сейчас</string>
+    <string name="settings_geo_updating">Обновление…</string>
+    <string name="settings_geo_status_ok">%1$s: %2$s, обновлено %3$s</string>
+    <string name="settings_geo_status_never">%1$s: ещё не скачано</string>
+    <string name="settings_geo_status_error">%1$s: ошибка — %2$s, %3$s</string>
+    <plurals name="settings_geo_categories">
+        <item quantity="one">%d категория</item>
+        <item quantity="few">%d категории</item>
+        <item quantity="many">%d категорий</item>
+        <item quantity="other">%d категории</item>
+    </plurals>
+    <string name="geo_error_http">сервер ответил %1$s</string>
+    <string name="geo_error_timeout">истекло время ожидания</string>
+    <string name="geo_error_network">нет связи с сервером</string>
+    <string name="geo_error_empty">пустой ответ</string>
+    <string name="geo_error_too_large">файл слишком большой</string>
+    <string name="geo_error_bad_url">некорректный адрес</string>
+    <string name="geo_error_checksum">контрольная сумма не совпала</string>
+    <string name="geo_error_invalid">файл повреждён или не в формате v2ray</string>
+    <string name="geo_error_storage">не удалось сохранить файл</string>
+    <string name="geo_error_convert">не удалось подготовить наборы правил</string>
+    <string name="geo_error_unknown">неизвестная ошибка</string>
+    <string name="ago_now">только что</string>
+    <plurals name="ago_minutes">
+        <item quantity="one">%d минуту назад</item>
+        <item quantity="few">%d минуты назад</item>
+        <item quantity="many">%d минут назад</item>
+        <item quantity="other">%d минуты назад</item>
+    </plurals>
+    <plurals name="ago_hours">
+        <item quantity="one">%d час назад</item>
+        <item quantity="few">%d часа назад</item>
+        <item quantity="many">%d часов назад</item>
+        <item quantity="other">%d часа назад</item>
+    </plurals>
+    <plurals name="ago_days">
+        <item quantity="one">%d день назад</item>
+        <item quantity="few">%d дня назад</item>
+        <item quantity="many">%d дней назад</item>
+        <item quantity="other">%d дня назад</item>
+    </plurals>
+
     <string name="settings_section_config">Конфиг</string>
     <string name="settings_config">Последний конфиг</string>
     <string name="settings_config_summary">Просмотр JSON, секреты скрыты</string>
@@ -72,7 +132,7 @@
     <string name="settings_reset">Сбросить настройки</string>
     <string name="settings_reset_summary">Вернуть заводские значения. Подписки не затрагиваются</string>
     <string name="settings_reset_confirm_title">Сбросить настройки?</string>
-    <string name="settings_reset_confirm_text">Тема, соединение, DNS, разделение трафика и правила вернутся к значениям по умолчанию. Подписки останутся.</string>
+    <string name="settings_reset_confirm_text">Тема, соединение, DNS, настройки баз geoip/geosite, разделение трафика и правила вернутся к значениям по умолчанию. Подписки и скачанные базы останутся.</string>
 
     <string name="action_save">Сохранить</string>
     <string name="action_add">Добавить</string>
@@ -153,4 +213,19 @@
     <string name="rule_set_category_ru">Российские сервисы</string>
     <string name="rule_set_tld_ru">Домены .ru, .рф, .su</string>
     <string name="rule_set_geoip_ru">IP-адреса России</string>
+    <string name="rule_set_pick">Выбрать набор</string>
+    <string name="rule_set_search">Название или категория</string>
+    <string name="rule_set_group_bundled">Встроенные</string>
+    <string name="rule_set_group_geoip">IP-адреса (geoip)</string>
+    <string name="rule_set_group_geosite">Домены (geosite)</string>
+    <plurals name="rule_set_entries">
+        <item quantity="one">%1$s запись</item>
+        <item quantity="few">%1$s записи</item>
+        <item quantity="many">%1$s записей</item>
+        <item quantity="other">%1$s записи</item>
+    </plurals>
+    <string name="rule_set_none_found">Ничего не найдено</string>
+    <string name="rule_set_more_hint">Остальные категории появятся после загрузки баз geoip/geosite в настройках</string>
+    <string name="rule_set_huge">Очень большой набор: заметно больше памяти и несколько секунд на подготовку</string>
+    <string name="rule_set_unavailable">Набор недоступен — правило не применяется</string>
 </resources>

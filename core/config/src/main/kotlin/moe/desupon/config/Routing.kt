@@ -55,7 +55,7 @@ internal object RoutingBuilder {
                 SplitRuleKind.RULE_SET -> {
                     val set = ruleSets[value]
                     if (!RULE_SET_NAME.matches(value) || set == null) {
-                        skipped += SkippedRule(rule, "rule-set not bundled")
+                        skipped += SkippedRule(rule, "rule-set unavailable")
                         continue
                     }
                     usedSets.getOrPut(value) {

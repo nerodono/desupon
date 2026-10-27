@@ -5,6 +5,9 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import moe.desupon.data.geo.GeoDataSettings
+import moe.desupon.data.geo.GeoFileStatus
+import moe.desupon.data.geo.GeoKind
 import moe.desupon.data.split.RuDefaults
 import moe.desupon.model.network.DnsSettings
 import moe.desupon.model.network.DnsStrategy
@@ -16,6 +19,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -40,6 +44,8 @@ class SettingsRepositoryTest {
         assertNull(r.subscriptionUserAgent.first())
         assertFalse(r.notificationPromptShown.first())
         assertFalse(r.batteryPromptShown.first())
+        assertEquals(GeoDataSettings(auto = true, intervalDays = 5, unmeteredOnly = true), r.geoData.first())
+        assertEquals(GeoKind.entries.associateWith { GeoFileStatus() }, r.geoStatus.first())
     }
 
     @Test
@@ -129,6 +135,12 @@ class SettingsRepositoryTest {
         r.setPackageSelected(SplitMode.ONLY_SELECTED, "org.example.app", selected = true)
         r.setNotificationPromptShown()
         r.setBatteryPromptShown()
+        r.setGeoAuto(false)
+        r.setGeoUrl(GeoKind.GEOIP, "https://mirror.example/geoip.dat")
+        r.setGeoInterval(null)
+        r.setGeoUnmeteredOnly(false)
+        val status = GeoFileStatus("https://mirror.example/geoip.dat", "\"e1\"", "ab", 10, 20, null)
+        r.updateGeoStatus(GeoKind.GEOIP) { status }
 
         r.resetAll()
 
@@ -138,6 +150,8 @@ class SettingsRepositoryTest {
         assertNull(r.subscriptionUserAgent.first())
         assertTrue(r.notificationPromptShown.first())
         assertTrue(r.batteryPromptShown.first())
+        assertEquals(GeoDataSettings(), r.geoData.first())
+        assertEquals(status, r.geoStatus.first().getValue(GeoKind.GEOIP), "download status survives a reset")
     }
 
     @Test
@@ -185,6 +199,35 @@ class SettingsRepositoryTest {
         r.setPrefixBypassEnabled(false)
         r.setAppBypassed("ru.example.other", bypassed = true)
         assertEquals(setOf("ru.example.other"), r.settings.first().apps.packages)
+    }
+
+    @Test
+    fun geoDataSettersStoreOnlyCustomValues() = runTest {
+        val r = repo()
+        r.setGeoUrl(GeoKind.GEOSITE, " https://mirror.example/geosite.dat ")
+        r.setGeoUrl(GeoKind.GEOIP, GeoDataSettings.DEFAULT_GEOIP_URL)
+        r.setGeoInterval(14)
+        r.setGeoAuto(false)
+        r.setGeoUnmeteredOnly(false)
+        val s = r.geoData.first()
+        assertEquals(GeoDataSettings(auto = false, geositeUrl = "https://mirror.example/geosite.dat", intervalDays = 14, unmeteredOnly = false), s)
+        assertEquals(GeoDataSettings.DEFAULT_GEOIP_URL, s.url(GeoKind.GEOIP))
+        assertEquals("https://mirror.example/geosite.dat", s.url(GeoKind.GEOSITE))
+
+        r.setGeoUrl(GeoKind.GEOSITE, " ")
+        r.setGeoInterval(null)
+        assertNull(r.geoData.first().geositeUrl)
+        assertNull(r.geoData.first().intervalDays, "manual")
+        assertFailsWith<IllegalArgumentException> { r.setGeoInterval(0) }
+    }
+
+    @Test
+    fun geoStatusIsKeptPerFile() = runTest {
+        val r = repo()
+        r.updateGeoStatus(GeoKind.GEOSITE) { it.copy(etag = "\"s1\"", lastOkAtMs = 5, lastError = "HTTP_404") }
+        r.updateGeoStatus(GeoKind.GEOSITE) { it.copy(lastError = null) }
+        assertEquals(GeoFileStatus(etag = "\"s1\"", lastOkAtMs = 5), r.geoStatus.first().getValue(GeoKind.GEOSITE))
+        assertEquals(GeoFileStatus(), r.geoStatus.first().getValue(GeoKind.GEOIP))
     }
 
     @Test

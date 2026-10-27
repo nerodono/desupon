@@ -12,12 +12,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -28,7 +31,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -38,12 +43,21 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
+import moe.desupon.data.fetch.FetchError
 import moe.desupon.data.fetch.SubscriptionFetcher
+import moe.desupon.data.geo.GeoDataSettings
+import moe.desupon.data.geo.GeoDataUpdater
+import moe.desupon.data.geo.GeoKind
 import moe.desupon.data.settings.ThemePreference
+import moe.desupon.feature.settings.logic.Ago
 import moe.desupon.feature.settings.logic.DnsAddress
+import moe.desupon.feature.settings.logic.GeoUrl
+import moe.desupon.feature.settings.ui.ChoiceRow
 import moe.desupon.feature.settings.ui.ChevronRow
 import moe.desupon.feature.settings.ui.SectionHeader
 import moe.desupon.feature.settings.ui.SettingsCard
@@ -56,7 +70,7 @@ import moe.desupon.platform.power.BackgroundWork
 import moe.desupon.ui.theme.DesuponGlyphs
 import org.koin.compose.viewmodel.koinViewModel
 
-private enum class SettingsDialog { DNS, USER_AGENT, RESET }
+private enum class SettingsDialog { DNS, USER_AGENT, GEOIP_URL, GEOSITE_URL, RESET }
 
 /** Settings root; [contentPadding] carries the host's insets and bars. */
 @Composable
@@ -68,6 +82,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val geo by viewModel.geo.collectAsStateWithLifecycle()
     var dialog by rememberSaveable { mutableStateOf<SettingsDialog?>(null) }
 
     LazyColumn(
@@ -90,6 +105,13 @@ fun SettingsScreen(
                 onOpenSplitTunnel = onOpenSplitTunnel,
                 onEditDns = { dialog = SettingsDialog.DNS },
                 onEditUserAgent = { dialog = SettingsDialog.USER_AGENT },
+            )
+        }
+        item {
+            GeoSection(
+                state = geo,
+                viewModel = viewModel,
+                onEditUrl = { kind -> dialog = if (kind == GeoKind.GEOIP) SettingsDialog.GEOIP_URL else SettingsDialog.GEOSITE_URL },
             )
         }
         item {
@@ -130,6 +152,17 @@ fun SettingsScreen(
                 dialog = null
             },
         )
+        SettingsDialog.GEOIP_URL, SettingsDialog.GEOSITE_URL -> {
+            val kind = if (dialog == SettingsDialog.GEOIP_URL) GeoKind.GEOIP else GeoKind.GEOSITE
+            key(kind) {
+                GeoUrlDialog(
+                    kind = kind,
+                    current = if (kind == GeoKind.GEOIP) geo.settings.geoipUrl else geo.settings.geositeUrl,
+                    onDismiss = { dialog = null },
+                    onSave = { if (viewModel.setGeoUrl(kind, it)) dialog = null },
+                )
+            }
+        }
         SettingsDialog.RESET -> AlertDialog(
             onDismissRequest = { dialog = null },
             title = { Text(stringResource(R.string.settings_reset_confirm_title)) },
@@ -333,6 +366,156 @@ private fun UserAgentDialog(current: String, onDismiss: () -> Unit, onSave: (Str
     )
 }
 
+@Composable
+private fun GeoSection(state: GeoUiState, viewModel: SettingsViewModel, onEditUrl: (GeoKind) -> Unit) {
+    val config = state.settings
+    Section(R.string.settings_section_geo) {
+        SwitchRow(
+            title = stringResource(R.string.settings_geo_auto),
+            subtitle = stringResource(R.string.settings_geo_auto_summary),
+            icon = SettingsGlyphs.Database,
+            checked = config.auto,
+            onCheckedChange = viewModel::setGeoAuto,
+        )
+        val presets = (GeoDataSettings.INTERVAL_PRESETS + listOfNotNull(config.intervalDays)).distinct().sorted()
+        ChoiceRow(title = stringResource(R.string.settings_geo_interval), icon = SettingsGlyphs.Clock, enabled = config.auto) {
+            (presets + null).forEach { days ->
+                FilterChip(
+                    selected = config.intervalDays == days,
+                    onClick = { viewModel.setGeoInterval(days) },
+                    enabled = config.auto,
+                    label = {
+                        Text(
+                            if (days == null) {
+                                stringResource(R.string.settings_geo_interval_manual)
+                            } else {
+                                pluralStringResource(R.plurals.settings_geo_interval_days, days, days)
+                            },
+                        )
+                    },
+                )
+            }
+        }
+        SwitchRow(
+            title = stringResource(R.string.settings_geo_unmetered),
+            subtitle = stringResource(R.string.settings_geo_unmetered_summary),
+            icon = SettingsGlyphs.Wifi,
+            checked = config.unmeteredOnly,
+            enabled = config.auto,
+            onCheckedChange = viewModel::setGeoUnmeteredOnly,
+        )
+        for (kind in GeoKind.entries) {
+            val url = config.url(kind)
+            ChevronRow(
+                title = stringResource(geoUrlTitle(kind)),
+                subtitle = if (url == GeoDataSettings.defaultUrl(kind)) stringResource(R.string.settings_geo_url_default, url) else url,
+                icon = SettingsGlyphs.Globe,
+                onClick = { onEditUrl(kind) },
+            )
+        }
+        val now by produceState(System.currentTimeMillis()) {
+            while (true) {
+                delay(AGO_TICK_MS)
+                value = System.currentTimeMillis()
+            }
+        }
+        val lines = listOfNotNull(stringResource(R.string.settings_geo_updating).takeIf { state.running }) +
+            state.files.map { geoStatus(it, now) }
+        SettingsRow(
+            title = stringResource(R.string.settings_geo_update_now),
+            subtitle = lines.joinToString("\n"),
+            icon = SettingsGlyphs.Download,
+            enabled = !state.running,
+            onClick = viewModel::updateGeoNow,
+        ) {
+            if (state.running) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+        }
+    }
+}
+
+private fun geoUrlTitle(kind: GeoKind): Int = when (kind) {
+    GeoKind.GEOIP -> R.string.settings_geo_geoip_url
+    GeoKind.GEOSITE -> R.string.settings_geo_geosite_url
+}
+
+@Composable
+private fun geoStatus(file: GeoFileUi, nowMs: Long): String {
+    val s = file.status
+    val error = s.lastError
+    val ok = s.lastOkAtMs
+    return when {
+        error != null ->
+            stringResource(R.string.settings_geo_status_error, file.kind.id, geoErrorText(error), ago(s.lastAttemptAtMs ?: nowMs, nowMs))
+        ok != null && file.categories > 0 -> stringResource(
+            R.string.settings_geo_status_ok,
+            file.kind.id,
+            pluralStringResource(R.plurals.settings_geo_categories, file.categories, file.categories),
+            ago(ok, nowMs),
+        )
+        else -> stringResource(R.string.settings_geo_status_never, file.kind.id)
+    }
+}
+
+@Composable
+private fun geoErrorText(code: String): String {
+    if (code.startsWith(HTTP_ERROR_PREFIX)) return stringResource(R.string.geo_error_http, code.removePrefix(HTTP_ERROR_PREFIX))
+    return stringResource(
+        when (code) {
+            FetchError.Timeout.code -> R.string.geo_error_timeout
+            FetchError.Network.code -> R.string.geo_error_network
+            FetchError.EmptyBody.code -> R.string.geo_error_empty
+            FetchError.TooLarge.code -> R.string.geo_error_too_large
+            GeoDataUpdater.ERROR_BAD_URL -> R.string.geo_error_bad_url
+            GeoDataUpdater.ERROR_CHECKSUM -> R.string.geo_error_checksum
+            GeoDataUpdater.ERROR_INVALID -> R.string.geo_error_invalid
+            GeoDataUpdater.ERROR_STORAGE -> R.string.geo_error_storage
+            GeoDataUpdater.ERROR_CONVERT -> R.string.geo_error_convert
+            else -> R.string.geo_error_unknown
+        },
+    )
+}
+
+@Composable
+private fun ago(atMs: Long, nowMs: Long): String = when (val a = Ago.of(atMs, nowMs)) {
+    Ago.JustNow -> stringResource(R.string.ago_now)
+    is Ago.Minutes -> pluralStringResource(R.plurals.ago_minutes, a.n, a.n)
+    is Ago.Hours -> pluralStringResource(R.plurals.ago_hours, a.n, a.n)
+    is Ago.Days -> pluralStringResource(R.plurals.ago_days, a.n, a.n)
+}
+
+/** [current] is the custom URL, null for the default. */
+@Composable
+private fun GeoUrlDialog(kind: GeoKind, current: String?, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var text by rememberSaveable { mutableStateOf(current.orEmpty()) }
+    val valid = GeoUrl.isValid(text)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(geoUrlTitle(kind))) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                isError = !valid,
+                placeholder = { Text(GeoDataSettings.defaultUrl(kind)) },
+                supportingText = {
+                    Text(stringResource(if (valid) R.string.settings_geo_url_dialog_hint else R.string.settings_geo_url_invalid))
+                },
+                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(text) }, enabled = valid) { Text(stringResource(R.string.action_save)) }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { onSave("") }) { Text(stringResource(R.string.action_default)) }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            }
+        },
+    )
+}
+
 /** The exemption can change in system settings at any time, so it is read again on every resume. */
 @Composable
 private fun BackgroundRows() {
@@ -365,3 +548,6 @@ private fun Context.startSafely(intent: Intent) {
     } catch (_: SecurityException) {
     }
 }
+
+private const val AGO_TICK_MS = 60_000L
+private const val HTTP_ERROR_PREFIX = "HTTP_"

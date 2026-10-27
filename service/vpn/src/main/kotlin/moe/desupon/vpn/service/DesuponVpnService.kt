@@ -44,7 +44,7 @@ import moe.desupon.brain.port.LibboxControl
 import moe.desupon.brain.port.SettingsPort
 import moe.desupon.brain.port.SocketProtector
 import moe.desupon.brain.probe.PoolProbes
-import moe.desupon.config.LocalRuleSet
+import moe.desupon.data.geo.GeoDataUpdater
 import moe.desupon.data.repo.ProbeStatRepository
 import moe.desupon.data.repo.SubscriptionRepository
 import moe.desupon.data.ruleset.RuleSetStore
@@ -77,6 +77,7 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
     private val observer: NetworkObserver by inject()
     private val brains: BrainFactory by inject()
     private val ruleSetStore: RuleSetStore by inject()
+    private val geoData: GeoDataUpdater by inject()
     private val probes: PoolProbes by inject()
     private val settings: SettingsPort by inject()
     private val preferences: SettingsRepository by inject()
@@ -179,9 +180,9 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
         try {
             autoRetry?.awaitSettings()
             withContext(Dispatchers.IO) { runtime.attach(this@DesuponVpnService) }
-            val ruleSets = withContext(Dispatchers.IO) { installRuleSets() }
+            withContext(Dispatchers.IO) { installRuleSets() }
             val bScope = CoroutineScope(SupervisorJob() + Dispatchers.Default).also { brainScope = it }
-            val b = brains.create(bScope, SocketProtector(::protect), ruleSets).also { brain = it }
+            val b = brains.create(bScope, SocketProtector(::protect), ruleSetStore.sets).also { brain = it }
             holder.running()
             probes.attach(b)
             coroutineScope {
@@ -206,14 +207,17 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
         }
     }
 
-    private suspend fun installRuleSets(): Map<String, LocalRuleSet> =
-        try {
-            ruleSetStore.install()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            ruleSetStore.installed()
+    /** Failures leave the sets already on disk in use. */
+    private suspend fun installRuleSets() {
+        for (step in listOf(ruleSetStore::install, geoData::prepareSession)) {
+            try {
+                step()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
         }
+    }
 
     private fun onBrainState(state: ConnState) {
         holder.publish(state)

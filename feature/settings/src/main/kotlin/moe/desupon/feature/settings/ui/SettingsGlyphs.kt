@@ -169,6 +169,55 @@ internal object SettingsGlyphs {
             }
         }
     }
+
+    val Database by lazy {
+        glyph("Database") {
+            stroke {
+                moveTo(4f, 6f)
+                arcTo(8f, 3f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 20f, y1 = 6f)
+                arcTo(8f, 3f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 4f, y1 = 6f)
+                close()
+                moveTo(4f, 6f); verticalLineTo(18f)
+                arcTo(8f, 3f, 0f, isMoreThanHalf = false, isPositiveArc = false, x1 = 20f, y1 = 18f)
+                verticalLineTo(6f)
+                moveTo(4f, 12f)
+                arcTo(8f, 3f, 0f, isMoreThanHalf = false, isPositiveArc = false, x1 = 20f, y1 = 12f)
+            }
+        }
+    }
+
+    val Clock by lazy {
+        glyph("Clock") {
+            stroke {
+                circle(12f, 12f, 9f)
+                moveTo(12f, 7f); verticalLineTo(12f); lineTo(15.5f, 14f)
+            }
+        }
+    }
+
+    val Wifi by lazy {
+        glyph("Wifi") {
+            stroke {
+                moveTo(2.5f, 9f)
+                arcTo(13.5f, 13.5f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 21.5f, y1 = 9f)
+                moveTo(5.5f, 12.5f)
+                arcTo(9f, 9f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 18.5f, y1 = 12.5f)
+                moveTo(8.5f, 16f)
+                arcTo(5f, 5f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 15.5f, y1 = 16f)
+            }
+            fill { circle(12f, 19.5f, 1.3f) }
+        }
+    }
+
+    val Download by lazy {
+        glyph("Download") {
+            stroke {
+                moveTo(12f, 4f); verticalLineTo(15f)
+                moveTo(7.5f, 10.5f); lineTo(12f, 15f); lineTo(16.5f, 10.5f)
+                moveTo(5f, 19.5f); horizontalLineTo(19f)
+            }
+        }
+    }
 }
 
 private class GlyphScope(val builder: ImageVector.Builder) {

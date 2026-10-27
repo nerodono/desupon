@@ -8,7 +8,7 @@ import moe.desupon.model.node.NodeId
 import moe.desupon.model.node.Tier
 import moe.desupon.model.routing.SplitRule
 
-/** Bundled rule-set file; [domainBased] sets whether DNS rules may reference it (IP rule-sets there are a legacy address filter). */
+/** Local rule-set file; [domainBased] sets whether DNS rules may reference it (IP rule-sets there are a legacy address filter). */
 data class LocalRuleSet(
     val path: String,
     val domainBased: Boolean = true,
