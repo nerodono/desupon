@@ -1,0 +1,185 @@
+{
+  "log": {
+    "level": "error"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "local"
+      }
+    ]
+  },
+  "outbounds": [
+    {
+      "type": "vless",
+      "tag": "n-ca8802566536db73",
+      "server": "de-exit.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000a1",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.example.org",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "c3ludGhldGljLXhyYXktcmVhbGl0eS1rZXktMDAwMDE",
+          "short_id": "a1",
+          "support_x25519mlkem768": true
+        }
+      },
+      "detour": "n-ca8802566536db73-1"
+    },
+    {
+      "type": "trojan",
+      "tag": "n-ca8802566536db73-1",
+      "server": "ru-entry.example.com",
+      "server_port": 443,
+      "password": "synthetic-sb-entry",
+      "tls": {
+        "enabled": true,
+        "server_name": "ru-entry.example.com"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "n-65702917e26baf6d",
+      "server": "ru-entry.example.com",
+      "server_port": 443,
+      "password": "synthetic-sb-entry",
+      "tls": {
+        "enabled": true,
+        "server_name": "ru-entry.example.com"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-4134e75c76c41b96",
+      "server": "fi.example.com",
+      "server_port": 8388,
+      "method": "aes-128-gcm",
+      "password": "synthetic-sb-fi",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "n-0ebd1a8db19abf7b",
+      "server": "se.example.com",
+      "server_port": 443,
+      "password": "synthetic-sb-se",
+      "tls": {
+        "enabled": true,
+        "server_name": "se.example.com"
+      },
+      "detour": "n-0ebd1a8db19abf7b-1"
+    },
+    {
+      "type": "trojan",
+      "tag": "n-750010332fc385fb-1",
+      "server": "ru-entry.example.com",
+      "server_port": 443,
+      "password": "synthetic-sb-entry",
+      "tls": {
+        "enabled": true,
+        "server_name": "ru-entry.example.com"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "n-0ebd1a8db19abf7b-1",
+      "mtu": 1280,
+      "address": [
+        "10.77.0.2/32"
+      ],
+      "private_key": "c3ludGhldGljLWNoYWluLXdnLXByaXZhdGUta2V5MDE=",
+      "peers": [
+        {
+          "address": "203.0.113.77",
+          "port": 51820,
+          "public_key": "c3ludGhldGljLWNoYWluLXdnLXB1YmxpYy1rZXktMDE=",
+          "allowed_ips": [
+            "0.0.0.0/0"
+          ]
+        }
+      ],
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "wireguard",
+      "tag": "n-5c2dc503b6d7a707",
+      "mtu": 1280,
+      "address": [
+        "10.77.0.2/32"
+      ],
+      "private_key": "c3ludGhldGljLWNoYWluLXdnLXByaXZhdGUta2V5MDE=",
+      "peers": [
+        {
+          "address": "203.0.113.77",
+          "port": 51820,
+          "public_key": "c3ludGhldGljLWNoYWluLXdnLXB1YmxpYy1rZXktMDE=",
+          "allowed_ips": [
+            "0.0.0.0/0"
+          ]
+        }
+      ],
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "wireguard",
+      "tag": "n-750010332fc385fb",
+      "address": [
+        "10.78.0.2/32"
+      ],
+      "private_key": "c3ludGhldGljLWNoYWluLXdnLXByaXZhdGUta2V5MDE=",
+      "peers": [
+        {
+          "address": "jp-wg.example.com",
+          "port": 51820,
+          "public_key": "c3ludGhldGljLWNoYWluLXdnLXB1YmxpYy1rZXktMDE=",
+          "allowed_ips": [
+            "0.0.0.0/0"
+          ]
+        }
+      ],
+      "detour": "n-750010332fc385fb-1",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local",
+      "strategy": "prefer_ipv4"
+    }
+  }
+}

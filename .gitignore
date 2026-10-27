@@ -1,0 +1,36 @@
+# Gradle / Android
+.gradle/
+.kotlin/
+build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.aar
+*.ap_
+*.dex
+*.jks
+*.keystore
+keystore.properties
+
+# Go core
+native/third_party/
+native/build/
+native/.gobin/
+
+# Nix
+result
+result-*
+.direnv/
+
+# IDE / OS
+.idea/
+.vscode/
+.fleet/
+*.iml
+.DS_Store
+
+# Planning notes
+freeturn-plan/

@@ -1,0 +1,315 @@
+{
+  "log": {
+    "level": "error"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "local"
+      }
+    ]
+  },
+  "outbounds": [
+    {
+      "type": "vless",
+      "tag": "n-8709c71282ddbe28",
+      "server": "de-exit.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000e1",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.example.org",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "c3ludGhldGljLXhyYXktcmVhbGl0eS1rZXktMDAwMDE",
+          "short_id": "e1",
+          "support_x25519mlkem768": true
+        }
+      },
+      "detour": "n-8709c71282ddbe28-1"
+    },
+    {
+      "type": "vless",
+      "tag": "n-8709c71282ddbe28-1",
+      "server": "ru-entry.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000e2",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "ya.example.ru",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "c3ludGhldGljLXJlbGF5LXJlYWxpdHkta2V5LTAwMDE",
+          "short_id": "e2",
+          "support_x25519mlkem768": true
+        }
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "n-c6d36b68a0ce1a80",
+      "server": "de-exit.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000e1",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.example.org",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "c3ludGhldGljLXhyYXktcmVhbGl0eS1rZXktMDAwMDE",
+          "short_id": "e1",
+          "support_x25519mlkem768": true
+        }
+      },
+      "detour": "n-c6d36b68a0ce1a80-1"
+    },
+    {
+      "type": "trojan",
+      "tag": "n-c6d36b68a0ce1a80-1",
+      "server": "kz-entry.example.com",
+      "server_port": 8443,
+      "password": "synthetic-chain-trojan",
+      "tls": {
+        "enabled": true,
+        "server_name": "kz-entry.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/relay",
+        "headers": {
+          "Host": "kz-entry.example.com"
+        }
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "n-77ed32d2cd5b2885",
+      "server": "fi.example.com",
+      "server_port": 443,
+      "password": "synthetic-chain-trojan-fi",
+      "tls": {
+        "enabled": true,
+        "server_name": "fi.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "record_fragment": true,
+        "fragment": true
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "n-0d137f5cb82b190d",
+      "server": "pl.example.com",
+      "server_port": 443,
+      "password": "synthetic-chain-trojan-pl",
+      "tls": {
+        "enabled": true,
+        "server_name": "pl.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "record_fragment": true
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "n-a9de13855eabb3eb",
+      "server": "fi2.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000e3",
+      "tls": {
+        "enabled": true,
+        "server_name": "fi2.example.com",
+        "fragment": true
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/ws"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "n-29dff65b685999c4",
+      "server": "nl.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000e4",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.example.org",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "c3ludGhldGljLXhyYXktcmVhbGl0eS1rZXktMDAwMDE",
+          "short_id": "e4",
+          "support_x25519mlkem768": true
+        },
+        "record_fragment": true
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vmess",
+      "tag": "n-1e107e17d57982e9",
+      "server": "us-exit.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000e5",
+      "security": "auto",
+      "tls": {
+        "enabled": true,
+        "server_name": "us-exit.example.com"
+      },
+      "transport": {
+        "type": "grpc",
+        "service_name": "exit"
+      },
+      "detour": "n-1e107e17d57982e9-1"
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-1e107e17d57982e9-1",
+      "server": "hop1.example.com",
+      "server_port": 8388,
+      "method": "chacha20-ietf-poly1305",
+      "password": "synthetic-hop1",
+      "detour": "n-1e107e17d57982e9-2"
+    },
+    {
+      "type": "trojan",
+      "tag": "n-1e107e17d57982e9-2",
+      "server": "hop2.example.com",
+      "server_port": 443,
+      "password": "synthetic-hop2",
+      "tls": {
+        "enabled": true,
+        "server_name": "hop2.example.com"
+      },
+      "detour": "n-1e107e17d57982e9-3"
+    },
+    {
+      "type": "vless",
+      "tag": "n-1e107e17d57982e9-3",
+      "server": "hop3.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000e6",
+      "tls": {
+        "enabled": true,
+        "server_name": "hop3.example.com",
+        "record_fragment": true,
+        "fragment": true
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "n-7c38039d083c7e55",
+      "server": "se.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000e7",
+      "tls": {
+        "enabled": true,
+        "server_name": "se.example.com"
+      },
+      "detour": "n-7c38039d083c7e55-1"
+    },
+    {
+      "type": "trojan",
+      "tag": "n-4472314da525ac12",
+      "server": "plain.example.com",
+      "server_port": 443,
+      "password": "synthetic-plain",
+      "tls": {
+        "enabled": true,
+        "server_name": "plain.example.com"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "n-7c38039d083c7e55-1",
+      "mtu": 1280,
+      "address": [
+        "10.66.0.2/32"
+      ],
+      "private_key": "c3ludGhldGljLWNoYWluLXdnLXByaXZhdGUta2V5MDE=",
+      "peers": [
+        {
+          "address": "wg-entry.example.com",
+          "port": 51820,
+          "public_key": "c3ludGhldGljLWNoYWluLXdnLXB1YmxpYy1rZXktMDE=",
+          "allowed_ips": [
+            "0.0.0.0/0"
+          ]
+        }
+      ],
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local",
+      "strategy": "prefer_ipv4"
+    }
+  }
+}

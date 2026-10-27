@@ -1,0 +1,6 @@
+github.com/apernet/hysteria/core/v2 v2.13.0 h1:6hWhxnbGAH04VpInXrq/AVoH+kscha4YECx7Tj2yc9Y=
+github.com/apernet/hysteria/core/v2 v2.13.0/go.mod h1:nmxpy/ABkrPG1eNaMzGWUoIlOBjAkb3X2I8H1TGgd1A=
+github.com/apernet/hysteria/extras/v2 v2.13.0 h1:cenZ6WcsvwyNvRAUjqNxjDcyAJH7GeGP8DLuSRFSfyo=
+github.com/apernet/hysteria/extras/v2 v2.13.0/go.mod h1:UeJrvFSznan/9LWT0v1Z4QpCop+mZ/jbduGC3UIw2CM=
+github.com/juicity/juicity v0.5.0 h1:6XX/B31nKWS12SQy4BGoDxUjjKuyZf5VWk64AwumSO8=
+github.com/juicity/juicity v0.5.0/go.mod h1:sk1N0HZJYgoIsnOGaigbCtgXQyfG9fmss4r1G5CZu2s=

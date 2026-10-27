@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Connection button captions: neutral / desu pairs. -->
+    <string name="desupon_cb_label_disconnected">Нажмите для подключения</string>
+    <string name="desupon_cb_label_disconnected_desu">Ну? Жми уже, чиби-человек, десу</string>
+    <string name="desupon_cb_label_checking">Проверяю серверы…</string>
+    <string name="desupon_cb_label_checking_desu">Суидрим стучится во все двери… десу</string>
+    <string name="desupon_cb_label_connecting">Подключаюсь…</string>
+    <string name="desupon_cb_label_connecting_desu">Открываю дверь, не торопи, десу</string>
+    <string name="desupon_cb_label_connected">Подключено</string>
+    <string name="desupon_cb_label_connected_desu">Готово. Н-не думай, что это ради тебя, десу</string>
+    <string name="desupon_cb_label_switching">Переключаюсь на другой сервер…</string>
+    <string name="desupon_cb_label_switching_desu">Этот засох. Пересаживаю тебя, десу</string>
+    <string name="desupon_cb_label_error">Нет доступных серверов</string>
+    <string name="desupon_cb_label_error_desu">Все двери заперты… Суисейсеки не виновата, десу</string>
+
+    <!-- Accessibility: always neutral. -->
+    <string name="desupon_cb_cd">Подключение</string>
+    <string name="desupon_cb_state_disconnected">Отключено</string>
+    <plurals name="desupon_cb_state_checking" tools:ignore="UnusedQuantity">
+        <item quantity="one">Проверка серверов: доступны в %1$d из %2$d подписки</item>
+        <item quantity="few">Проверка серверов: доступны в %1$d из %2$d подписок</item>
+        <item quantity="many">Проверка серверов: доступны в %1$d из %2$d подписок</item>
+        <item quantity="other">Проверка серверов: доступны в %1$d из %2$d подписки</item>
+    </plurals>
+    <string name="desupon_cb_state_connecting">Подключение</string>
+    <string name="desupon_cb_state_connected">Подключено</string>
+    <string name="desupon_cb_state_switching">Переключение на другой сервер</string>
+    <string name="desupon_cb_state_error">Ошибка подключения</string>
+    <string name="desupon_cb_action_connect">подключиться</string>
+    <string name="desupon_cb_action_disconnect">отключиться</string>
+</resources>

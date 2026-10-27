@@ -1,0 +1,9 @@
+go 1.26.10
+
+// A workspace of its own keeps the reference servers' dependencies out of the core's build list.
+use (
+	.
+	..
+	../build/src/sing-box-extended
+	../build/src/sing-quic
+)

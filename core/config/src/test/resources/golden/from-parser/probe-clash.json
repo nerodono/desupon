@@ -1,0 +1,193 @@
+{
+  "log": {
+    "level": "error"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "local"
+      }
+    ]
+  },
+  "outbounds": [
+    {
+      "type": "shadowsocks",
+      "tag": "n-44306b4fe79c2ab6",
+      "server": "us-ss.example.com",
+      "server_port": 8388,
+      "method": "aes-256-gcm",
+      "password": "synthetic-clash-ss",
+      "plugin": "obfs-local",
+      "plugin_opts": "obfs=tls;obfs-host=www.example.org",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vmess",
+      "tag": "n-45900761c07c1f1b",
+      "server": "vm2.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000d1",
+      "security": "auto",
+      "tls": {
+        "enabled": true,
+        "server_name": "vm2.example.com"
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/ray",
+        "headers": {
+          "Host": "vm2.example.com"
+        },
+        "max_early_data": 2048,
+        "early_data_header_name": "Sec-WebSocket-Protocol"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "n-62b4e9645ce5d5e7",
+      "server": "rl.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000d2",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.example.org",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "c3ludGhldGljLWNsYXNoLXJlYWxpdHktMDAwMDAwMDE",
+          "short_id": "0a1b",
+          "support_x25519mlkem768": true
+        }
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "n-213d7e1b939d22e2",
+      "server": "tj2.example.com",
+      "server_port": 443,
+      "password": "synthetic-trojan-2",
+      "tls": {
+        "enabled": true,
+        "server_name": "tj2.example.com"
+      },
+      "transport": {
+        "type": "grpc",
+        "service_name": "svc"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "n-05842c13382e0404",
+      "server": "hy.example.com",
+      "server_port": 443,
+      "server_ports": [
+        "20000:30000",
+        "40000:40000"
+      ],
+      "password": "synthetic-hy2",
+      "up_mbps": 50,
+      "down_mbps": 200,
+      "obfs": {
+        "type": "salamander",
+        "password": "synthetic-obfs"
+      },
+      "tls": {
+        "enabled": true,
+        "server_name": "hy.example.com",
+        "alpn": [
+          "h3"
+        ]
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "tuic",
+      "tag": "n-8cc21b0479507c59",
+      "server": "tc.example.com",
+      "server_port": 8443,
+      "uuid": "00000000-0000-4000-8000-0000000000d3",
+      "password": "synthetic-tuic",
+      "congestion_control": "bbr",
+      "udp_relay_mode": "native",
+      "tls": {
+        "enabled": true,
+        "server_name": "tc.example.com",
+        "alpn": [
+          "h3"
+        ]
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "n-c22f73dce58af66e",
+      "mtu": 1408,
+      "address": [
+        "10.10.0.2/32",
+        "fd00::2/128"
+      ],
+      "private_key": "c3ludGhldGljLWNsYXNoLXdnLXByaXZhdGUta2V5MDE=",
+      "peers": [
+        {
+          "address": "198.51.100.40",
+          "port": 51820,
+          "public_key": "c3ludGhldGljLWNsYXNoLXdnLXB1YmxpYy1rZXkwMDE=",
+          "allowed_ips": [
+            "0.0.0.0/0",
+            "::/0"
+          ]
+        }
+      ],
+      "amnezia": {
+        "jc": 4,
+        "jmin": 40,
+        "jmax": 70,
+        "s1": 15,
+        "s2": 16,
+        "h1": "11111",
+        "h2": "22222",
+        "h3": "33333",
+        "h4": "44444"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local",
+      "strategy": "prefer_ipv4"
+    }
+  }
+}

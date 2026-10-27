@@ -1,0 +1,30 @@
+diff --git a/include/external.go b/include/external.go
+new file mode 100644
+index 00000000..874022d0
+--- /dev/null
++++ b/include/external.go
+@@ -0,0 +1,10 @@
++package include
++
++import "github.com/sagernet/sing-box/adapter/outbound"
++
++var externalOutbounds []func(*outbound.Registry)
++
++// RegisterExternalOutbound adds an out-of-tree outbound type to every registry built afterwards; call it from init.
++func RegisterExternalOutbound(register func(*outbound.Registry)) {
++	externalOutbounds = append(externalOutbounds, register)
++}
+diff --git a/include/registry.go b/include/registry.go
+index 811906c3..de60d59c 100644
+--- a/include/registry.go
++++ b/include/registry.go
+@@ -146,6 +146,9 @@ func OutboundRegistry() *outbound.Registry {
+ 	registerStubForRemovedOutbounds(registry)
+ 	registerSudokuOutbound(registry)
+ 	registerCallOutbound(registry)
++	for _, register := range externalOutbounds {
++		register(registry)
++	}
+ 
+ 	return registry
+ }

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "servers": [
+    {"id": "27b8a625-4f4b-4428-9f0f-8a2317db7c79", "remarks": "🇸🇬 SG ss", "server": "sg.example.com", "server_port": 8388,
+     "password": "synthetic-ss-pass", "method": "chacha20-ietf-poly1305", "plugin": "obfs-local", "plugin_opts": "obfs=http;obfs-host=www.example.org"},
+    {"id": "7842c068-c667-41f2-8f7d-04feece3cb67", "remarks": "SS 2022", "server": "2001:db8::5", "server_port": 8389,
+     "password": "ZGVzdXBvbi1zczE2LWtleQ==", "method": "2022-blake3-aes-128-gcm"},
+    {"id": "bad", "remarks": "no port", "server": "x.example.com", "password": "p", "method": "aes-128-gcm"}
+  ],
+  "bytes_used": 1, "bytes_remaining": 2
+}

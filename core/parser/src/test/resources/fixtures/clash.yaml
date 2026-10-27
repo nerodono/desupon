@@ -1,0 +1,111 @@
+mixed-port: 7890
+allow-lan: false
+mode: rule
+base: &tlsbase
+  tls: true
+  skip-cert-verify: false
+proxies:
+  - name: "🇺🇸 US ss"
+    type: ss
+    server: us-ss.example.com
+    port: 8388
+    cipher: aes-256-gcm
+    password: "synthetic-clash-ss"
+    plugin: obfs
+    plugin-opts:
+      mode: tls
+      host: www.example.org
+  - name: "vmess ws"
+    type: vmess
+    server: vm2.example.com
+    port: 443
+    uuid: 00000000-0000-4000-8000-0000000000d1
+    alterId: 0
+    cipher: auto
+    <<: *tlsbase
+    servername: vm2.example.com
+    network: ws
+    ws-opts:
+      path: /ray
+      headers:
+        Host: vm2.example.com
+      max-early-data: 2048
+      early-data-header-name: Sec-WebSocket-Protocol
+  - name: "vless reality"
+    type: vless
+    server: rl.example.com
+    port: 443
+    uuid: 00000000-0000-4000-8000-0000000000d2
+    flow: xtls-rprx-vision
+    network: tcp
+    tls: true
+    servername: www.example.org
+    client-fingerprint: firefox
+    reality-opts:
+      public-key: c3ludGhldGljLWNsYXNoLXJlYWxpdHktMDAwMDAwMDE
+      short-id: "0a1b"
+  - name: "trojan grpc"
+    type: trojan
+    server: tj2.example.com
+    port: 443
+    password: synthetic-trojan-2
+    sni: tj2.example.com
+    network: grpc
+    grpc-opts:
+      grpc-service-name: svc
+  - name: "hy2 hop | только для мобильных"
+    type: hysteria2
+    server: hy.example.com
+    port: 443
+    ports: 20000-30000,40000
+    password: synthetic-hy2
+    obfs: salamander
+    obfs-password: synthetic-obfs
+    sni: hy.example.com
+    alpn: [h3]
+    up: "50 Mbps"
+    down: 200
+  - name: "tuic"
+    type: tuic
+    server: tc.example.com
+    port: 8443
+    uuid: 00000000-0000-4000-8000-0000000000d3
+    password: synthetic-tuic
+    congestion-controller: bbr
+    udp-relay-mode: native
+    alpn: [h3]
+    sni: tc.example.com
+  - name: "wg awg"
+    type: wireguard
+    server: 198.51.100.40
+    port: 51820
+    ip: 10.10.0.2
+    ipv6: fd00::2
+    private-key: c3ludGhldGljLWNsYXNoLXdnLXByaXZhdGUta2V5MDE=
+    public-key: c3ludGhldGljLWNsYXNoLXdnLXB1YmxpYy1rZXkwMDE=
+    reserved: [1, 2, 3]
+    mtu: 1408
+    amnezia-wg-option:
+      jc: 4
+      jmin: 40
+      jmax: 70
+      s1: 15
+      s2: 16
+      h1: 11111
+      h2: 22222
+      h3: 33333
+      h4: 44444
+  - name: "snell"
+    type: snell
+    server: sn.example.com
+    port: 443
+    psk: x
+  - name: "broken vless"
+    type: vless
+    server: br.example.com
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies: ["🇺🇸 US ss", "vmess ws"]
+rules:
+  - MATCH,PROXY

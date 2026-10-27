@@ -1,0 +1,81 @@
+{
+  "log": {
+    "level": "error"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "local"
+      }
+    ]
+  },
+  "outbounds": [],
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "n-f318504c2af454c8",
+      "mtu": 1280,
+      "address": [
+        "10.8.1.2/32"
+      ],
+      "private_key": "c3ludGhldGljLWFtbmV6aWEtcHJpdmF0ZS1rZXkwMDE=",
+      "peers": [
+        {
+          "address": "203.0.113.10",
+          "port": 43210,
+          "public_key": "c3ludGhldGljLWFtbmV6aWEtcHVibGljLWtleTAwMDE=",
+          "pre_shared_key": "c3ludGhldGljLWFtbmV6aWEtcHNrLWtleS0wMDAwMDE=",
+          "allowed_ips": [
+            "0.0.0.0/0",
+            "::/0"
+          ]
+        }
+      ],
+      "amnezia": {
+        "jc": 4,
+        "jmin": 40,
+        "jmax": 70,
+        "s1": 116,
+        "s2": 61,
+        "h1": "1239197098",
+        "h2": "1929999858",
+        "h3": "1842910958",
+        "h4": "1234567891"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "wireguard",
+      "tag": "n-55d8db97c3043cef",
+      "address": [
+        "10.8.2.2/32"
+      ],
+      "private_key": "c3ludGhldGljLWFtbmV6aWEtd2ctcHJpdmF0ZS1rMDE=",
+      "peers": [
+        {
+          "address": "203.0.113.10",
+          "port": 51820,
+          "public_key": "c3ludGhldGljLWFtbmV6aWEtd2ctcHVibGljLWswMDE=",
+          "allowed_ips": [
+            "0.0.0.0/0"
+          ]
+        }
+      ],
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local",
+      "strategy": "prefer_ipv4"
+    }
+  }
+}

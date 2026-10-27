@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_card_traffic">Трафик</string>
+    <string name="home_card_subscription">Подписка</string>
+    <string name="home_traffic_value">%1$s / %2$s</string>
+    <string name="home_traffic_unlimited">∞</string>
+    <string name="home_amount">%1$s %2$s</string>
+    <string name="home_unit_b">Б</string>
+    <string name="home_unit_kb">КБ</string>
+    <string name="home_unit_mb">МБ</string>
+    <string name="home_unit_gb">ГБ</string>
+    <string name="home_unit_tb">ТБ</string>
+    <plurals name="home_days_left">
+        <item quantity="one">%d день</item>
+        <item quantity="few">%d дня</item>
+        <item quantity="many">%d дней</item>
+        <item quantity="other">%d дня</item>
+    </plurals>
+    <string name="home_expired">Истекла</string>
+
+    <string name="home_server_from">из «%1$s»</string>
+    <string name="home_subscription_untitled">Подписка %1$d</string>
+
+    <string name="home_caption_turn">Запускаю запасной канал…</string>
+    <string name="home_caption_turn_desu">Копаю обходной ход, десу</string>
+    <string name="home_caption_degraded">Связь нестабильна</string>
+    <string name="home_caption_degraded_desu">Росток вянет… поливаю, десу</string>
+    <string name="home_caption_unstable">Подключено к лучшему из доступных</string>
+    <string name="home_caption_unstable_desu">Сад капризничает, держу лучший росток, десу</string>
+    <string name="home_caption_fail_config">Не удалось собрать конфигурацию</string>
+    <string name="home_caption_fail_config_desu">Чертёж сада не сходится, десу</string>
+    <string name="home_caption_fail_core">Не удалось запустить подключение</string>
+    <string name="home_caption_fail_core_desu">Лейка сломалась… не смотри так, десу</string>
+    <string name="home_caption_fail_not_prepared">Нет разрешения на подключение — нажмите ещё раз</string>
+    <string name="home_caption_fail_not_prepared_desu">Ключ от сада забрали, попроси заново, десу</string>
+    <string name="home_caption_fail_start_blocked">Система не дала запустить подключение</string>
+    <string name="home_caption_fail_start_blocked_desu">Садовник не пустил меня, попробуй из приложения, десу</string>
+    <string name="home_caption_fail_unknown">Ошибка подключения</string>
+    <string name="home_caption_fail_unknown_desu">Что-то пошло не так, десу</string>
+
+    <string name="home_caption_country_unavailable">Нет рабочих серверов: %1$s</string>
+    <string name="home_caption_country_unavailable_desu">В саду «%1$s» ничего не растёт, десу</string>
+    <string name="home_caption_country_unavailable_generic">Нет рабочих серверов в выбранной стране</string>
+    <string name="home_caption_country_unavailable_generic_desu">На выбранной грядке ничего не растёт, десу</string>
+    <string name="home_caption_node_unavailable">Выбранный сервер недоступен</string>
+    <string name="home_caption_node_unavailable_desu">Выбранный росток засох, десу</string>
+
+    <string name="home_retry">Повторить</string>
+    <string name="home_retry_desu">Ещё разок, десу</string>
+    <string name="home_vpn_denied">Без разрешения на VPN подключиться не получится</string>
+    <string name="home_vpn_unavailable">Система не дала запросить разрешение на VPN</string>
+
+    <string name="home_empty_title">Подписок пока нет</string>
+    <string name="home_empty_title_desu">Сад пуст, десу</string>
+    <string name="home_empty_body">Добавьте ссылку на подписку, чтобы подключиться</string>
+    <string name="home_empty_body_desu">Посади подписку, и я её полью</string>
+    <string name="home_empty_action">Добавить подписку</string>
+
+    <string name="home_location_any">Любая страна</string>
+    <string name="home_location_unknown_node">Выбранный сервер</string>
+    <string name="home_location_auto">%1$s · авто</string>
+    <string name="home_set_all">Все подписки</string>
+    <string name="home_location_hint">Нажмите, чтобы сменить локацию</string>
+    <string name="home_location_hint_desu">Ткни, и пересажу в другой сад, десу</string>
+
+    <string name="home_sheet_title">Выберите локацию</string>
+    <string name="home_sheet_title_desu">Куда отправимся, десу?</string>
+    <string name="home_sheet_refresh">Проверить серверы</string>
+    <string name="home_sheet_add_set">Новый набор</string>
+    <string name="home_sheet_whitelist">Сейчас белые списки — работают только серверы для них</string>
+    <string name="home_sheet_whitelist_desu">Белые списки, десу — растут только ростки для них</string>
+    <string name="home_sheet_relays">ретрансляторы</string>
+    <string name="home_sheet_checking">проверяю…</string>
+    <string name="home_sheet_dead">недоступна</string>
+    <string name="home_sheet_unknown">—</string>
+    <string name="home_sheet_outside_set">вне набора</string>
+    <string name="home_sheet_other">Другие</string>
+    <string name="home_sheet_expand">Показать серверы</string>
+    <string name="home_sheet_collapse">Скрыть серверы</string>
+    <string name="home_sheet_node_dead">Недоступен</string>
+    <string name="home_rtt">%1$d ms</string>
+
+    <string name="home_chain_first">сначала:</string>
+    <string name="home_chain_rest">остальные</string>
+
+    <string name="home_probe_throttled">Проверка уже была недавно — повторите через %1$d с</string>
+    <string name="home_location_rejected">Не удалось выбрать локацию</string>
+    <string name="home_pin_fallback">Сервер пропал из подписки — выбрано: %1$s</string>
+    <string name="home_pin_fallback_desu">Росток пропал из сада — пересадила: %1$s, десу</string>
+
+    <string name="simple_tap_to_connect">Нажмите, чтобы включить</string>
+    <string name="simple_no_servers">Нет серверов</string>
+    <string name="simple_retrying">Не получилось. Пробую ещё раз…</string>
+    <string name="simple_vpn_denied">Без разрешения включить не получится. Нажмите ещё раз</string>
+    <string name="simple_vpn_unavailable">Телефон не дал включить. Попробуйте ещё раз</string>
+    <string name="simple_advanced">Продвинутый режим</string>
+    <string name="simple_exit_title">Перейти в продвинутый режим?</string>
+    <string name="simple_exit_text">Появятся все разделы и настройки. Вернуть простой режим можно в настройках</string>
+    <string name="simple_exit_stay">Остаться</string>
+    <string name="simple_exit_leave">Перейти</string>
+</resources>

@@ -1,0 +1,40 @@
+{
+  "log": {
+    "level": "error"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "local"
+      }
+    ]
+  },
+  "outbounds": [
+    {
+      "type": "juicity",
+      "tag": "n-4b7917873cc90510",
+      "server": "juicity.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-00000000c0de",
+      "password": "synthetic-password-7f3a",
+      "congestion_control": "bbr",
+      "pinned_certchain_sha256": "c3ludGhldGljLXNob3J0LWtleS0wMDAwMDAwMDAwMQ==",
+      "tls": {
+        "enabled": true,
+        "server_name": "juicity.example.com"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local",
+      "strategy": "prefer_ipv4"
+    }
+  }
+}

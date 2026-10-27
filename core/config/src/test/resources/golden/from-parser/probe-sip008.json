@@ -1,0 +1,48 @@
+{
+  "log": {
+    "level": "error"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "local"
+      }
+    ]
+  },
+  "outbounds": [
+    {
+      "type": "shadowsocks",
+      "tag": "n-13f0acf4bdd8ecc6",
+      "server": "sg.example.com",
+      "server_port": 8388,
+      "method": "chacha20-ietf-poly1305",
+      "password": "synthetic-ss-pass",
+      "plugin": "obfs-local",
+      "plugin_opts": "obfs=http;obfs-host=www.example.org",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-1f8d985322727ad2",
+      "server": "2001:db8::5",
+      "server_port": 8389,
+      "method": "2022-blake3-aes-128-gcm",
+      "password": "ZGVzdXBvbi1zczE2LWtleQ==",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local",
+      "strategy": "prefer_ipv4"
+    }
+  }
+}

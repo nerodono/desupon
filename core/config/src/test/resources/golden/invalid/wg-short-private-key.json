@@ -1,0 +1,48 @@
+{
+  "log": {
+    "level": "error"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "local"
+      }
+    ]
+  },
+  "outbounds": [],
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "n-effac804ac2487b2",
+      "mtu": 1408,
+      "address": [
+        "10.66.0.2/32"
+      ],
+      "private_key": "c3ludGhldGljLXNob3J0LWtleS0wMDAwMDAwMDAwMQ==",
+      "peers": [
+        {
+          "address": "198.51.100.10",
+          "port": 51820,
+          "public_key": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
+          "pre_shared_key": "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM=",
+          "allowed_ips": [
+            "0.0.0.0/0",
+            "::/0"
+          ]
+        }
+      ],
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local",
+      "strategy": "prefer_ipv4"
+    }
+  }
+}

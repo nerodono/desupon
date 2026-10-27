@@ -1,0 +1,71 @@
+{
+  "log": {
+    "level": "error"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "local"
+      }
+    ]
+  },
+  "outbounds": [],
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "n-65fb4347cc66a28b",
+      "mtu": 1406,
+      "address": [
+        "10.8.1.30/32"
+      ],
+      "private_key": "ZGVzdXBvbi1zeW50aGV0aWMtd2ctcHJpdmF0ZS1rMDE=",
+      "peers": [
+        {
+          "address": "fi.example.com",
+          "port": 51042,
+          "public_key": "ZGVzdXBvbi1zeW50aGV0aWMtYXdnLXB1YmtleS1maTE=",
+          "pre_shared_key": "ZGVzdXBvbi1zeW50aGV0aWMtYXdnLXByZXNoYXJlZGs=",
+          "allowed_ips": [
+            "0.0.0.0/0",
+            "::/0"
+          ]
+        }
+      ],
+      "amnezia": {
+        "jc": 5,
+        "jmin": 40,
+        "jmax": 90,
+        "s1": 40,
+        "s2": 30,
+        "s3": 25,
+        "s4": 18,
+        "h1": "1111111111-1111112222",
+        "h2": "2222222222-2222223333",
+        "h3": "3333333333-3333334444",
+        "h4": "4044444444-4044445555",
+        "content_padding_addition": "0-8",
+        "rekey_after_time": "100-140",
+        "rekey_timeout": "5",
+        "reject_after_time": "160-200",
+        "keepalive_timeout": "10",
+        "max_handshake_attempts": "15-25",
+        "i1": "<r 72>",
+        "header_protection_key": "ZGVzdXBvbi1zeW50aGV0aWMtYXdnLWhway1rZXktMDE=",
+        "random_trailers": true,
+        "disable_cookies": true
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local",
+      "strategy": "prefer_ipv4"
+    }
+  }
+}

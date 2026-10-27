@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 108dp adaptive canvas; artwork stays inside the 66dp safe circle. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.9"
+        android:scaleY="0.9"
+        android:translateX="-3"
+        android:translateY="-1.5">
+        <path
+            android:fillColor="#F3EFE4"
+            android:pathData="M32,54 H58 L60,74 Q60.4,78 56.4,78 H33.6 Q29.6,78 30,74 Z" />
+        <path
+            android:fillColor="#F3EFE4"
+            android:pathData="M58.5,63.5 L71,49 L74.8,51.8 L59.8,73 Z M70,50.4 A3.2,3.2 0 1,1 76.4,50.4 A3.2,3.2 0 1,1 70,50.4 Z" />
+        <path
+            android:strokeColor="#F3EFE4"
+            android:strokeWidth="3.6"
+            android:strokeLineCap="round"
+            android:pathData="M33.5,55 C33.5,42 50,40 55.5,53" />
+        <path
+            android:strokeColor="#C2FFD2"
+            android:strokeWidth="2.6"
+            android:strokeLineCap="round"
+            android:pathData="M73.43,43.90 A6.5,6.5 0 0,1 79.38,48.39" />
+        <path
+            android:strokeColor="#84D8A1"
+            android:strokeWidth="2.6"
+            android:strokeLineCap="round"
+            android:pathData="M73.57,39.91 A10.5,10.5 0 0,1 83.19,47.16" />
+        <path
+            android:strokeColor="#C2FFD2"
+            android:strokeWidth="2.6"
+            android:strokeLineCap="round"
+            android:pathData="M73.71,35.91 A14.5,14.5 0 0,1 86.99,45.92" />
+        <path
+            android:fillColor="#FF8797"
+            android:pathData="M77,56.5 C77,56.5 74.3,60.2 74.3,62.1 A2.7,2.7 0 0,0 79.7,62.1 C79.7,60.2 77,56.5 77,56.5 Z" />
+    </group>
+</vector>

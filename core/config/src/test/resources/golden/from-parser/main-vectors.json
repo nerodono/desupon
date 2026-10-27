@@ -1,0 +1,775 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "local"
+      },
+      {
+        "type": "https",
+        "tag": "remote",
+        "server": "1.1.1.1",
+        "detour": "proxy"
+      }
+    ],
+    "final": "remote",
+    "strategy": "prefer_ipv4"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "address": [
+        "198.19.250.1/30",
+        "fdc8:6e1a:9d3f::1/126"
+      ],
+      "mtu": 1500,
+      "auto_route": true,
+      "stack": "gvisor"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "proxy",
+      "outbounds": [
+        "n-98ab275b32c8fab7",
+        "n-0aefea010281a356",
+        "n-58083b0c70e0918a",
+        "n-5d1f034602f9a3cd",
+        "n-765ed0aa6d6e98d2",
+        "n-455172d42daa9b97",
+        "n-0af1f71c0d1e3066",
+        "n-c62e03e94b28d1db",
+        "n-3f1f387d172523d2",
+        "n-a72a7bc7e080ab4d",
+        "n-6ba2983a66decc73",
+        "n-2d20b0b95df874bb",
+        "n-0ab3bce4dc8a2f6d",
+        "n-a38bd4d92684371c",
+        "n-bf09c14a93467ccd",
+        "n-cf753ba5227a929d",
+        "n-ffdd3fc034ef3799",
+        "n-8dbc1fde91b1c061",
+        "n-f7e20d4890e1136d",
+        "n-570d6a7bf3250d8d",
+        "n-94bce2b294d94075",
+        "n-58e77461fc2e6be2",
+        "n-33b38fe2922ebf1b",
+        "n-6b86367588246919",
+        "n-0d83e4aec0a3c05a",
+        "n-46b31a6744cabee2",
+        "n-eb7ae14afd061059",
+        "n-6f7ffadb5edbb592",
+        "n-cb1f826e51bfef3c",
+        "n-1e7424e6879694ed",
+        "n-bcad0d88e252ae36",
+        "n-5b3cc63a24cd8a23",
+        "n-1f8606f438885d4c",
+        "n-7074fb8cb75e980e",
+        "n-51cbe69dc6e28b66",
+        "n-8ec8a71ebd3f057b",
+        "n-466048141abfed88"
+      ],
+      "default": "n-98ab275b32c8fab7",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "vmess",
+      "tag": "n-98ab275b32c8fab7",
+      "server": "example.com",
+      "server_port": 10086,
+      "uuid": "uuid",
+      "security": "auto",
+      "tls": {
+        "enabled": true,
+        "server_name": "sni.example.com"
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/path",
+        "headers": {
+          "Host": "host.example.com"
+        }
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "n-0aefea010281a356",
+      "server": "example.com",
+      "server_port": 443,
+      "uuid": "uuid",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "sni.example.com"
+      },
+      "transport": {
+        "type": "grpc",
+        "service_name": "/grpc"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vmess",
+      "tag": "n-58083b0c70e0918a",
+      "server": "192.0.2.140",
+      "server_port": 38949,
+      "uuid": "c7d456c6-fac6-41ae-988b-5fe46b951ec6",
+      "security": "auto",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "hysteria",
+      "tag": "n-5d1f034602f9a3cd",
+      "server": "example.com",
+      "server_port": 9080,
+      "up_mbps": 10,
+      "down_mbps": 50,
+      "auth_str": "secret",
+      "tls": {
+        "enabled": true,
+        "server_name": "sni.example.com",
+        "insecure": true,
+        "alpn": [
+          "hysteria"
+        ]
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "n-765ed0aa6d6e98d2",
+      "server": "example.com",
+      "server_port": 9443,
+      "password": "secret",
+      "tls": {
+        "enabled": true,
+        "server_name": "sni.example.com",
+        "insecure": true
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "n-455172d42daa9b97",
+      "server": "example.com",
+      "server_port": 9443,
+      "password": "user:pass",
+      "tls": {
+        "enabled": true
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-0af1f71c0d1e3066",
+      "server": "127.0.0.1",
+      "server_port": 8009,
+      "method": "aes-256-gcm",
+      "password": "XKFKl2rULjIp74",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "n-c62e03e94b28d1db",
+      "server": "example.com",
+      "server_port": 443,
+      "password": "password",
+      "tls": {
+        "enabled": true,
+        "server_name": "sni.example.com"
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/ws"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "n-3f1f387d172523d2",
+      "server": "example.com",
+      "server_port": 443,
+      "password": "password",
+      "tls": {
+        "enabled": true
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "n-a72a7bc7e080ab4d",
+      "server": "example.com",
+      "server_port": 443,
+      "password": "password",
+      "tls": {
+        "enabled": true,
+        "server_name": "sni.example.com",
+        "insecure": true,
+        "alpn": [
+          "h2",
+          "http/1.1"
+        ]
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "n-6ba2983a66decc73",
+      "server": "example.com",
+      "server_port": 443,
+      "password": "password",
+      "tls": {
+        "enabled": true,
+        "server_name": "peer.example.com"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-2d20b0b95df874bb",
+      "server": "example.com",
+      "server_port": 8388,
+      "method": "aes-256-gcm",
+      "password": "my-secret-password",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-0ab3bce4dc8a2f6d",
+      "server": "example.com",
+      "server_port": 8388,
+      "method": "aes-256-gcm",
+      "password": "mypassword",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-a38bd4d92684371c",
+      "server": "ss.example.com",
+      "server_port": 443,
+      "method": "chacha20-ietf-poly1305",
+      "password": "secret123",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-bf09c14a93467ccd",
+      "server": "legacy.example.com",
+      "server_port": 8388,
+      "method": "aes-256-gcm",
+      "password": "password123",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-cf753ba5227a929d",
+      "server": "partial.example.com",
+      "server_port": 443,
+      "method": "chacha20-ietf-poly1305",
+      "password": "my-pass",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-ffdd3fc034ef3799",
+      "server": "example.com",
+      "server_port": 8388,
+      "method": "aes-256-gcm",
+      "password": "pass:word:with:colons",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-8dbc1fde91b1c061",
+      "server": "example.com",
+      "server_port": 8388,
+      "method": "aes-256-gcm",
+      "password": "password",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-f7e20d4890e1136d",
+      "server": "2001:db8::1",
+      "server_port": 8388,
+      "method": "aes-256-gcm",
+      "password": "password",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "hysteria",
+      "tag": "n-570d6a7bf3250d8d",
+      "server": "example.com",
+      "server_port": 443,
+      "up_mbps": 100,
+      "down_mbps": 100,
+      "obfs": "123456",
+      "auth_str": "123456",
+      "tls": {
+        "enabled": true,
+        "server_name": "sni.example.com",
+        "insecure": true,
+        "alpn": [
+          "hysteria"
+        ]
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "tuic",
+      "tag": "n-94bce2b294d94075",
+      "server": "192.0.2.7",
+      "server_port": 23450,
+      "uuid": "00000000-0000-4000-8000-0000000000e1",
+      "password": "synthetic",
+      "congestion_control": "bbr",
+      "udp_relay_mode": "native",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.example.com",
+        "insecure": true,
+        "alpn": [
+          "h3"
+        ]
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "n-58e77461fc2e6be2",
+      "server": "ws.example.com",
+      "server_port": 443,
+      "password": "your_password",
+      "tls": {
+        "enabled": true,
+        "server_name": "ws.example.com"
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/f1rocket",
+        "headers": {
+          "Host": "ws.example.com"
+        }
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "n-33b38fe2922ebf1b",
+      "server": "192.0.2.95",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000e2",
+      "tls": {
+        "enabled": true,
+        "server_name": "w.example.workers.dev",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/",
+        "headers": {
+          "Host": "w.example.workers.dev"
+        },
+        "max_early_data": 2048,
+        "early_data_header_name": "Sec-WebSocket-Protocol"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-6b86367588246919",
+      "server": "192.0.2.107",
+      "server_port": 55990,
+      "method": "chacha20-ietf-poly1305",
+      "password": "synthetic-pass",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vmess",
+      "tag": "n-0d83e4aec0a3c05a",
+      "server": "192.0.2.173",
+      "server_port": 8080,
+      "uuid": "00000000-0000-4000-8000-0000000000e3",
+      "security": "chacha20-poly1305",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vmess",
+      "tag": "n-6f7ffadb5edbb592",
+      "server": "vx.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000e4",
+      "security": "auto",
+      "tls": {
+        "enabled": true,
+        "server_name": "vx.example.com",
+        "alpn": [
+          "h2"
+        ],
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "type": "xhttp",
+        "mode": "packet-up",
+        "host": "vx.example.com",
+        "path": "/vx",
+        "x_padding_bytes": "300-600"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-cb1f826e51bfef3c",
+      "server": "ss22.example.com",
+      "server_port": 54321,
+      "method": "2022-blake3-aes-256-gcm",
+      "password": "c3ludGhldGljLXNzMjAyMi1pcHNrLWtleS0wMDAwMDE=:c3ludGhldGljLXNzMjAyMi11cHNrLWtleS0wMDAwMDE=",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-1e7424e6879694ed",
+      "server": "ss16.example.com",
+      "server_port": 8388,
+      "method": "2022-blake3-aes-128-gcm",
+      "password": "ZGVzdXBvbi1zczE2LWtleQ==",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "tuic",
+      "tag": "n-bcad0d88e252ae36",
+      "server": "tuic.example.com",
+      "server_port": 9443,
+      "uuid": "00000000-0000-4000-8000-0000000000e5",
+      "password": "token",
+      "congestion_control": "bbr",
+      "udp_relay_mode": "native",
+      "tls": {
+        "enabled": true,
+        "server_name": "sni.example.com",
+        "insecure": true,
+        "disable_sni": true,
+        "alpn": [
+          "h3"
+        ]
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "tuic",
+      "tag": "n-5b3cc63a24cd8a23",
+      "server": "tuic.example.com",
+      "server_port": 443,
+      "uuid": "000000000000400080000000000000e6",
+      "password": "token",
+      "tls": {
+        "enabled": true
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "n-1f8606f438885d4c",
+      "server": "hy2.example.com",
+      "server_port": 443,
+      "password": "synthetic-auth",
+      "obfs": {
+        "type": "gecko",
+        "password": "synthetic-obfs",
+        "min_packet_size": 512,
+        "max_packet_size": 1400
+      },
+      "tls": {
+        "enabled": true,
+        "server_name": "hy2.example.com"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "n-7074fb8cb75e980e",
+      "server": "hy2-fm.example.com",
+      "server_port": 443,
+      "server_ports": [
+        "20000:30000"
+      ],
+      "hop_interval": "10s",
+      "hop_interval_max": "30s",
+      "password": "synthetic-auth",
+      "up_mbps": 50,
+      "down_mbps": 200,
+      "bbr_profile": "aggressive",
+      "obfs": {
+        "type": "gecko",
+        "password": "synthetic-obfs",
+        "min_packet_size": 512,
+        "max_packet_size": 1400
+      },
+      "tls": {
+        "enabled": true,
+        "server_name": "hy2.example.com"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "n-51cbe69dc6e28b66",
+      "server": "hy2-hop.example.com",
+      "server_port": 443,
+      "server_ports": [
+        "40000:41000"
+      ],
+      "hop_interval": "20s",
+      "password": "synthetic-auth",
+      "obfs": {
+        "type": "salamander",
+        "password": "synthetic-obfs"
+      },
+      "tls": {
+        "enabled": true
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "juicity",
+      "tag": "n-8ec8a71ebd3f057b",
+      "server": "198.51.100.30",
+      "server_port": 23182,
+      "uuid": "00000000-0000-4000-8000-0000000000a1",
+      "password": "synthetic-juicity",
+      "congestion_control": "bbr",
+      "pinned_certchain_sha256": "c3ludGhldGljLWp1aWNpdHktY2hhaW4taGFzaC0wMDE=",
+      "tls": {
+        "enabled": true,
+        "server_name": "juicity.example.com"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "juicity",
+      "tag": "n-466048141abfed88",
+      "server": "juicity.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000a2",
+      "password": "synthetic-juicity",
+      "tls": {
+        "enabled": true,
+        "server_name": "juicity.example.com",
+        "insecure": true
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "n-46b31a6744cabee2",
+      "mtu": 1380,
+      "address": [
+        "10.0.0.2/24"
+      ],
+      "private_key": "cGsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "peers": [
+        {
+          "address": "192.0.2.4",
+          "port": 222,
+          "public_key": "cHViAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          "pre_shared_key": "cHNrAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          "allowed_ips": [
+            "0.0.0.0/0",
+            "::/0"
+          ]
+        }
+      ],
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "wireguard",
+      "tag": "n-eb7ae14afd061059",
+      "mtu": 1280,
+      "address": [
+        "10.8.0.2/32"
+      ],
+      "private_key": "cGsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "peers": [
+        {
+          "address": "192.0.2.4",
+          "port": 51820,
+          "public_key": "cHViAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          "allowed_ips": [
+            "0.0.0.0/0",
+            "::/0"
+          ]
+        }
+      ],
+      "amnezia": {
+        "jc": 4,
+        "jmin": 40,
+        "jmax": 70,
+        "s1": 0,
+        "s2": 0,
+        "h1": "1",
+        "h2": "2",
+        "h3": "3",
+        "h4": "4"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      },
+      {
+        "package_name": [
+          "moe.desupon.app"
+        ],
+        "action": "route",
+        "outbound": "proxy"
+      }
+    ],
+    "final": "proxy",
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local",
+      "strategy": "prefer_ipv4"
+    }
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true
+    }
+  }
+}

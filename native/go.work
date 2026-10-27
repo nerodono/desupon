@@ -1,0 +1,8 @@
+go 1.26.10
+
+// build-core.sh creates the patched copies; third_party stays pristine.
+use (
+	.
+	./build/src/sing-box-extended
+	./build/src/sing-quic
+)

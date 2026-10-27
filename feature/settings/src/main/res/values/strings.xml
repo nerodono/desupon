@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_title">Настройки</string>
+
+    <string name="settings_section_appearance">Внешний вид</string>
+    <string name="settings_simple">Простой режим</string>
+    <string name="settings_simple_summary">Только большая кнопка включения, без лишнего. Выйти можно кнопкой «Продвинутый режим» внизу экрана</string>
+    <string name="settings_theme">Тема</string>
+    <string name="settings_theme_dark">Тёмная</string>
+    <string name="settings_theme_light">Светлая</string>
+    <string name="settings_theme_system">Как в системе</string>
+    <string name="settings_amoled">AMOLED</string>
+    <string name="settings_amoled_summary">Чисто чёрный фон в тёмной теме</string>
+    <string name="settings_desu">Desu-режим</string>
+    <string name="settings_desu_summary">Игривые подписи на главном экране</string>
+    <string name="settings_dynamic_color">Material You</string>
+    <string name="settings_dynamic_color_summary">Цвета из обоев вместо фирменной палитры</string>
+    <string name="settings_dynamic_color_unsupported">Доступно с Android 12</string>
+
+    <string name="settings_section_connection">Соединение</string>
+    <string name="settings_split">Разделение трафика</string>
+    <string name="settings_split_mode_all">Все приложения через VPN</string>
+    <plurals name="settings_split_mode_only">
+        <item quantity="one">Только %d приложение</item>
+        <item quantity="few">Только %d приложения</item>
+        <item quantity="many">Только %d приложений</item>
+        <item quantity="other">Только %d приложения</item>
+    </plurals>
+    <plurals name="settings_split_mode_except">
+        <item quantity="one">Кроме %d приложения</item>
+        <item quantity="few">Кроме %d приложений</item>
+        <item quantity="many">Кроме %d приложений</item>
+        <item quantity="other">Кроме %d приложения</item>
+    </plurals>
+    <plurals name="settings_rules_count">
+        <item quantity="one">%d правило</item>
+        <item quantity="few">%d правила</item>
+        <item quantity="many">%d правил</item>
+        <item quantity="other">%d правила</item>
+    </plurals>
+    <string name="settings_split_summary">%1$s · %2$s</string>
+    <string name="settings_lan_bypass">LAN мимо VPN</string>
+    <string name="settings_lan_bypass_summary">Локальная сеть (192.168.x.x, 10.x.x.x) идёт напрямую</string>
+    <string name="settings_ipv4_only">Только IPv4</string>
+    <string name="settings_ipv4_only_summary">Не использовать IPv6. Помогает, если IPv6 у сети или сервера работает плохо</string>
+    <string name="settings_dns">DNS</string>
+    <string name="settings_dns_default">%1$s (по умолчанию)</string>
+    <string name="settings_dns_dialog_title">DNS-сервер</string>
+    <string name="settings_dns_dialog_hint">DoH-адрес, например https://dns.example/dns-query. Также tls://, quic://, h3://, tcp://, udp://. Пусто — по умолчанию.</string>
+    <string name="settings_dns_invalid">Неподдерживаемый адрес DNS</string>
+    <string name="settings_user_agent">User-Agent подписок</string>
+    <string name="settings_user_agent_default">%1$s (по умолчанию)</string>
+    <string name="settings_user_agent_dialog_hint">Для подписок без своего User-Agent. Пусто — по умолчанию.</string>
+    <string name="settings_background">Работа в фоне</string>
+    <string name="settings_background_allowed">Разрешена</string>
+    <string name="settings_background_restricted">Ограничена — нажмите, чтобы разрешить</string>
+    <string name="settings_autostart">Автозапуск</string>
+    <string name="settings_autostart_summary">Нужно на Honor, чтобы система не закрывала приложение</string>
+    <string name="settings_stealth">Скрытность включена всегда</string>
+    <string name="settings_stealth_summary">Без локальных портов и заметных следов VPN-клиента</string>
+
+    <string name="settings_section_config">Конфиг</string>
+    <string name="settings_config">Последний конфиг</string>
+    <string name="settings_config_summary">Просмотр JSON, секреты скрыты</string>
+    <string name="config_title">Последний конфиг</string>
+    <string name="config_empty">Нет конфига</string>
+    <string name="config_empty_hint">Он появится после первого подключения</string>
+    <string name="config_copy">Скопировать</string>
+    <string name="config_copied">Скопировано</string>
+
+    <string name="settings_section_data">Данные</string>
+    <string name="settings_reset">Сбросить настройки</string>
+    <string name="settings_reset_summary">Вернуть заводские значения. Подписки не затрагиваются</string>
+    <string name="settings_reset_confirm_title">Сбросить настройки?</string>
+    <string name="settings_reset_confirm_text">Тема, соединение, DNS, разделение трафика и правила вернутся к значениям по умолчанию. Подписки останутся.</string>
+
+    <string name="action_save">Сохранить</string>
+    <string name="action_add">Добавить</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="action_reset">Сбросить</string>
+    <string name="action_default">По умолчанию</string>
+    <string name="action_back">Назад</string>
+    <string name="action_more">Ещё</string>
+
+    <string name="split_title">Разделение трафика</string>
+    <string name="split_tab_apps">Приложения</string>
+    <string name="split_tab_rules">Правила</string>
+    <string name="split_reset_ru">Сбросить к RU-настройкам</string>
+    <string name="split_reset_apps_confirm">Режим, список приложений и префиксы ru., su. вернутся к RU-настройкам: российские банки, маркетплейсы и госсервисы идут мимо VPN. Ручные исключения сбросятся.</string>
+    <string name="split_reset_rules_confirm">Все правила будут заменены RU-правилами: российские домены и IP-адреса идут напрямую.</string>
+
+    <string name="split_mode_all">Все через VPN</string>
+    <string name="split_mode_all_summary">Каждое приложение идёт через VPN</string>
+    <string name="split_mode_only">Только выбранные</string>
+    <string name="split_mode_only_summary">Через VPN идут только отмеченные приложения</string>
+    <string name="split_mode_except">Все, кроме выбранных</string>
+    <string name="split_mode_except_summary">Отмеченные приложения идут мимо VPN</string>
+    <string name="split_self_note">Desupon всегда работает через VPN.</string>
+    <string name="split_search">Поиск приложений</string>
+    <string name="split_show_system">Системные приложения</string>
+    <string name="split_select_all">Выбрать все</string>
+    <string name="split_deselect_all">Снять все</string>
+    <string name="split_selected_count">Выбрано: %d</string>
+    <string name="split_no_apps">Ничего не найдено</string>
+    <string name="split_clear_search">Очистить</string>
+    <string name="split_app_by_prefix">по правилу %1$s*</string>
+    <string name="split_app_forced">через VPN вручную</string>
+    <string name="split_app_forced_reset">сбросить</string>
+    <string name="split_prefix_title">Исключать по префиксу</string>
+    <string name="split_prefix_summary">Например, все приложения ru.* и su.* идут напрямую</string>
+    <string name="split_prefix_add">Префикс</string>
+    <string name="split_prefix_add_title">Новый префикс</string>
+    <string name="split_prefix_hint">Начало имени пакета с точкой на конце</string>
+    <string name="split_prefix_remove">Удалить %1$s</string>
+    <string name="split_prefix_error_invalid">Только латиница, цифры, подчёркивание и точки; части начинаются с буквы</string>
+    <string name="split_prefix_error_dot">Префикс должен заканчиваться точкой</string>
+    <string name="split_prefix_error_duplicate">Такой префикс уже есть</string>
+
+    <string name="rules_hint">Правила проверяются сверху вниз, срабатывает первое подходящее. Остальной трафик идёт через VPN.</string>
+    <string name="rules_empty">Правил нет — весь трафик идёт через VPN</string>
+    <string name="rules_add">Добавить правило</string>
+    <string name="rules_edit">Изменить правило</string>
+    <string name="rules_move_up">Выше</string>
+    <string name="rules_move_down">Ниже</string>
+    <string name="rules_delete">Удалить</string>
+    <string name="rules_enabled">Включено</string>
+    <string name="rules_kind">Тип</string>
+    <string name="rules_value">Значение</string>
+    <string name="rules_action">Действие</string>
+    <string name="rules_rule_set">Набор правил</string>
+
+    <string name="rule_kind_domain">Домен</string>
+    <string name="rule_kind_domain_suffix">Суффикс домена</string>
+    <string name="rule_kind_domain_keyword">Ключевое слово</string>
+    <string name="rule_kind_ip_cidr">IP / подсеть</string>
+    <string name="rule_kind_rule_set">Набор правил</string>
+
+    <string name="rule_hint_domain">Точное совпадение, например example.com</string>
+    <string name="rule_hint_domain_suffix">Домен и его поддомены, например ru или example.com</string>
+    <string name="rule_hint_domain_keyword">Часть имени домена, например google</string>
+    <string name="rule_hint_ip_cidr">Например 10.0.0.0/8, 1.2.3.4 или 2001:db8::/32</string>
+
+    <string name="rule_action_direct">Напрямую</string>
+    <string name="rule_action_proxy">Через VPN</string>
+    <string name="rule_action_block">Блокировать</string>
+
+    <string name="rule_error_empty">Введите значение</string>
+    <string name="rule_error_domain">Некорректный домен</string>
+    <string name="rule_error_keyword">Только латиница, цифры, точка, дефис и подчёркивание</string>
+    <string name="rule_error_cidr">Некорректный IP-адрес или подсеть</string>
+    <string name="rule_error_rule_set">Выберите набор правил</string>
+
+    <string name="rule_set_category_ru">Российские сервисы</string>
+    <string name="rule_set_tld_ru">Домены .ru, .рф, .su</string>
+    <string name="rule_set_geoip_ru">IP-адреса России</string>
+</resources>

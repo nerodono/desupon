@@ -1,0 +1,97 @@
+package moe.desupon.feature.subscriptions
+
+import moe.desupon.data.fetch.FetchError
+import moe.desupon.data.repo.AddResult
+import moe.desupon.data.repo.UpdateResult
+import moe.desupon.model.subscription.SubId
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+
+class MessagesTest {
+    private fun res(id: Int, vararg args: Any) = UiText.Res(id, args.toList())
+
+    @Test
+    fun `no code means no error`() {
+        assertNull(Messages.error(null))
+        assertNull(Messages.error(""))
+    }
+
+    @Test
+    fun `every fetch error code has its own text`() {
+        val expected = mapOf(
+            FetchError.Timeout to R.string.subs_error_timeout,
+            FetchError.Network to R.string.subs_error_network,
+            FetchError.EmptyBody to R.string.subs_error_empty,
+            FetchError.TooLarge to R.string.subs_error_too_large,
+            FetchError.Rejected to R.string.subs_error_no_nodes,
+            FetchError.NoEndpoints to R.string.subs_error_no_endpoints,
+        )
+        for ((error, id) in expected) assertEquals(res(id), Messages.error(error.code), error.code)
+    }
+
+    @Test
+    fun `http statuses are grouped and keep the status`() {
+        assertEquals(res(R.string.subs_error_unauthorized, 401), Messages.error(FetchError.Http(401).code))
+        assertEquals(res(R.string.subs_error_unauthorized, 403), Messages.error("HTTP_403"))
+        assertEquals(res(R.string.subs_error_not_found, 404), Messages.error("HTTP_404"))
+        assertEquals(res(R.string.subs_error_not_found, 410), Messages.error("HTTP_410"))
+        assertEquals(res(R.string.subs_error_rate_limited, 429), Messages.error("HTTP_429"))
+        assertEquals(res(R.string.subs_error_server, 500), Messages.error("HTTP_500"))
+        assertEquals(res(R.string.subs_error_server, 503), Messages.error("HTTP_503"))
+        assertEquals(res(R.string.subs_error_http, 418), Messages.error("HTTP_418"))
+    }
+
+    @Test
+    fun `unknown or garbled codes never echo the raw value`() {
+        for (code in listOf("HTTP_", "HTTP_abc", "SOMETHING_NEW", "https://example.invalid/sub/token123")) {
+            assertEquals(res(R.string.subs_error_unknown), Messages.error(code), code)
+        }
+    }
+
+    @Test
+    fun `update results`() {
+        assertEquals(UiText.Plural(R.plurals.subs_result_updated, 7), Messages.update(UpdateResult.Updated(7, 2)))
+        assertEquals(res(R.string.subs_error_timeout), Messages.update(UpdateResult.Failed(FetchError.Timeout)))
+        assertEquals(res(R.string.subs_result_throttled), Messages.update(UpdateResult.Throttled(null)))
+        assertEquals(res(R.string.subs_result_local), Messages.update(UpdateResult.Local))
+        assertEquals(res(R.string.subs_result_not_found), Messages.update(UpdateResult.NotFound))
+        assertNull(Messages.update(UpdateResult.NotDue))
+    }
+
+    @Test
+    fun `update all summarizes attempted subscriptions`() {
+        assertEquals(res(R.string.subs_result_all_none), Messages.updateAll(emptyMap()))
+        val ok = mapOf(SubId(1) to UpdateResult.Updated(3, 0), SubId(2) to UpdateResult.Updated(1, 0))
+        assertEquals(res(R.string.subs_result_all_ok, 2, 2), Messages.updateAll(ok))
+        val mixed = ok + (SubId(3) to UpdateResult.Failed(FetchError.Http(403))) + (SubId(4) to UpdateResult.Throttled(1L))
+        assertEquals(res(R.string.subs_result_all_partial, 2, 4, 1), Messages.updateAll(mixed))
+    }
+
+    @Test
+    fun `add results`() {
+        assertEquals(res(R.string.subs_add_nothing), Messages.add(AddResult.NothingFound))
+        assertEquals(res(R.string.subs_add_exists), Messages.add(AddResult.AlreadyExists(SubId(1))))
+        assertEquals(res(R.string.subs_add_exists), Messages.add(AddResult.Added(emptyMap())))
+        assertEquals(UiText.Plural(R.plurals.subs_result_imported, 4), Messages.add(AddResult.Imported(SubId(1), 4)))
+        assertEquals(
+            UiText.Plural(R.plurals.subs_result_added, 2),
+            Messages.add(AddResult.Added(mapOf(SubId(1) to UpdateResult.Updated(1, 0), SubId(2) to UpdateResult.Updated(2, 0)))),
+        )
+        assertEquals(
+            res(R.string.subs_result_added_failed, res(R.string.subs_error_unauthorized, 403)),
+            Messages.add(AddResult.Added(mapOf(SubId(1) to UpdateResult.Failed(FetchError.Http(403))))),
+        )
+    }
+
+    @Test
+    fun `editor save messages`() {
+        assertEquals(res(R.string.subs_editor_saved), Messages.saved(null))
+        assertEquals(res(R.string.subs_editor_saved), Messages.saved(UpdateResult.NotDue))
+        assertEquals(
+            res(R.string.subs_editor_saved_with, UiText.Plural(R.plurals.subs_result_updated, 3)),
+            Messages.saved(UpdateResult.Updated(3, 0)),
+        )
+        assertEquals(res(R.string.subs_editor_local_no_nodes), Messages.localText(UpdateResult.Failed(FetchError.Rejected)))
+    }
+}

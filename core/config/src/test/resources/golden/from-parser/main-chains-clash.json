@@ -1,0 +1,212 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "local"
+      },
+      {
+        "type": "https",
+        "tag": "remote",
+        "server": "1.1.1.1",
+        "detour": "proxy"
+      }
+    ],
+    "final": "remote",
+    "strategy": "prefer_ipv4"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "address": [
+        "198.19.250.1/30",
+        "fdc8:6e1a:9d3f::1/126"
+      ],
+      "mtu": 1500,
+      "auto_route": true,
+      "stack": "gvisor"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "proxy",
+      "outbounds": [
+        "n-a5460f81e3e47e6d",
+        "n-8d72ba91986bea57",
+        "n-4577636f16366bcf",
+        "n-2a2dd03652e439a8"
+      ],
+      "default": "n-a5460f81e3e47e6d",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "vless",
+      "tag": "n-a5460f81e3e47e6d",
+      "server": "ru-entry.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000f1",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "ya.example.ru",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "c3ludGhldGljLXJlbGF5LXJlYWxpdHkta2V5LTAwMDE",
+          "short_id": "f1",
+          "support_x25519mlkem768": true
+        }
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "n-8d72ba91986bea57",
+      "server": "de-exit.example.com",
+      "server_port": 443,
+      "password": "synthetic-clash-chain",
+      "tls": {
+        "enabled": true,
+        "server_name": "de-exit.example.com"
+      },
+      "detour": "n-8d72ba91986bea57-1"
+    },
+    {
+      "type": "vless",
+      "tag": "n-8d72ba91986bea57-1",
+      "server": "ru-entry.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000f1",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "ya.example.ru",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "c3ludGhldGljLXJlbGF5LXJlYWxpdHkta2V5LTAwMDE",
+          "short_id": "f1",
+          "support_x25519mlkem768": true
+        }
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-4577636f16366bcf",
+      "server": "fi.example.com",
+      "server_port": 8388,
+      "method": "aes-256-gcm",
+      "password": "synthetic-clash-direct",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vmess",
+      "tag": "n-2a2dd03652e439a8",
+      "server": "se-exit.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000f2",
+      "security": "auto",
+      "tls": {
+        "enabled": true,
+        "server_name": "se-exit.example.com"
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/se"
+      },
+      "detour": "n-2a2dd03652e439a8-1"
+    },
+    {
+      "type": "trojan",
+      "tag": "n-2a2dd03652e439a8-1",
+      "server": "de-exit.example.com",
+      "server_port": 443,
+      "password": "synthetic-clash-chain",
+      "tls": {
+        "enabled": true,
+        "server_name": "de-exit.example.com"
+      },
+      "detour": "n-2a2dd03652e439a8-2"
+    },
+    {
+      "type": "vless",
+      "tag": "n-2a2dd03652e439a8-2",
+      "server": "ru-entry.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000f1",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "ya.example.ru",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "c3ludGhldGljLXJlbGF5LXJlYWxpdHkta2V5LTAwMDE",
+          "short_id": "f1",
+          "support_x25519mlkem768": true
+        }
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      },
+      {
+        "package_name": [
+          "moe.desupon.app"
+        ],
+        "action": "route",
+        "outbound": "proxy"
+      }
+    ],
+    "final": "proxy",
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local",
+      "strategy": "prefer_ipv4"
+    }
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true
+    }
+  }
+}

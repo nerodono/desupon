@@ -1,0 +1,358 @@
+diff --git a/internal/client/dnsdial/doh.go b/internal/client/dnsdial/doh.go
+index 6b83ed3..ecfc4d6 100644
+--- a/internal/client/dnsdial/doh.go
++++ b/internal/client/dnsdial/doh.go
+@@ -197,98 +197,11 @@ func (r *DohResolver) postWire(ctx context.Context, ep DohEndpoint, query []byte
+ 	return body, nil
+ }
+ 
+-// dohForwarder - локальный stub DNS сервер, проксирующий raw DNS-пакеты в DoH.
+-type dohForwarder struct {
+-	udpAddr string
+-	tcpAddr string
+-}
+-
+-var (
+-	dohForwarderOnce sync.Once
+-	dohForwarderInst *dohForwarder
+-	dohForwarderErr  error
+-	// Резолвер подменяется на лету: ядро перезапускается в том же процессе (mobile), а Once держит листенеры.
+-	dohForwarderRes atomic.Pointer[DohResolver]
+-)
+-
+-func sharedDohForwarder(r *DohResolver) (*dohForwarder, error) {
+-	dohForwarderRes.Store(r)
+-	dohForwarderOnce.Do(func() {
+-		dohForwarderInst, dohForwarderErr = startDohForwarder()
+-	})
+-	return dohForwarderInst, dohForwarderErr
+-}
++// Резолвер подменяется на лету: ядро перезапускается в том же процессе (mobile).
++var dohForwarderRes atomic.Pointer[DohResolver]
+ 
+ func currentDohResolver() *DohResolver { return dohForwarderRes.Load() }
+ 
+-func startDohForwarder() (_ *dohForwarder, err error) {
+-	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+-	if err != nil {
+-		return nil, fmt.Errorf("doh forwarder: listen UDP: %w", err)
+-	}
+-	defer func() {
+-		if err != nil {
+-			_ = udpConn.Close()
+-		}
+-	}()
+-	tcpLn, err := net.ListenTCP("tcp", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+-	if err != nil {
+-		return nil, fmt.Errorf("doh forwarder: listen TCP: %w", err)
+-	}
+-	defer func() {
+-		if err != nil {
+-			_ = tcpLn.Close()
+-		}
+-	}()
+-
+-	fwd := &dohForwarder{
+-		udpAddr: udpConn.LocalAddr().String(),
+-		tcpAddr: tcpLn.Addr().String(),
+-	}
+-	Log().Infof("[DoH] forwarder listening udp=%s tcp=%s", fwd.udpAddr, fwd.tcpAddr)
+-
+-	go fwd.serveUDP(udpConn)
+-	go fwd.serveTCP(tcpLn)
+-	return fwd, nil
+-}
+-
+-func (*dohForwarder) serveUDP(conn *net.UDPConn) {
+-	defer func() { _ = conn.Close() }()
+-	buf := make([]byte, forwarderUDPBufSize)
+-	for {
+-		n, client, err := conn.ReadFromUDP(buf)
+-		if err != nil {
+-			Log().Errorf("[DoH] udp read: %v", err)
+-			return
+-		}
+-		query := append([]byte(nil), buf[:n]...)
+-		go func(q []byte, c *net.UDPAddr) {
+-			ctx, cancel := context.WithTimeout(context.Background(), dohForwardBudget)
+-			defer cancel()
+-			resp, err := currentDohResolver().forwardRaw(ctx, q)
+-			if err != nil {
+-				Log().Warnf("[DoH] udp forward failed: %v", err)
+-				return
+-			}
+-			if _, err := conn.WriteToUDP(resp, c); err != nil {
+-				Log().Warnf("[DoH] udp write: %v", err)
+-			}
+-		}(query, client)
+-	}
+-}
+-
+-func (*dohForwarder) serveTCP(ln *net.TCPListener) {
+-	defer func() { _ = ln.Close() }()
+-	for {
+-		conn, err := ln.Accept()
+-		if err != nil {
+-			Log().Errorf("[DoH] tcp accept: %v", err)
+-			return
+-		}
+-		go handleDohForwarderTCP(conn)
+-	}
+-}
+-
+ func handleDohForwarderTCP(conn net.Conn) {
+ 	defer func() { _ = conn.Close() }()
+ 	for {
+@@ -328,19 +241,13 @@ func handleDohForwarderTCP(conn net.Conn) {
+ 	}
+ }
+ 
++// dohForwarderDial отдаёт резолверу in-process stream-conn вместо loopback-листенера, который виден любому приложению.
+ func dohForwarderDial(r *DohResolver) dialFunc {
+-	return func(ctx context.Context, network, _ string) (net.Conn, error) {
+-		fwd, err := sharedDohForwarder(r) //nolint:contextcheck
+-		if err != nil {
+-			return nil, err
+-		}
+-		var d net.Dialer
+-		switch network {
+-		case "tcp", "tcp4", "tcp6":
+-			return d.DialContext(ctx, "tcp", fwd.tcpAddr)
+-		default:
+-			return d.DialContext(ctx, "udp", fwd.udpAddr)
+-		}
++	return func(context.Context, string, string) (net.Conn, error) {
++		dohForwarderRes.Store(r)
++		client, server := net.Pipe()
++		go handleDohForwarderTCP(server)
++		return client, nil
+ 	}
+ }
+ 
+diff --git a/internal/client/dnsdial/doh_pipe_test.go b/internal/client/dnsdial/doh_pipe_test.go
+new file mode 100644
+index 0000000..4a72e83
+--- /dev/null
++++ b/internal/client/dnsdial/doh_pipe_test.go
+@@ -0,0 +1,31 @@
++package dnsdial
++
++import (
++	"net"
++	"net/netip"
++	"testing"
++)
++
++func TestDohForwarderDialUsesNoSocket(t *testing.T) {
++	dial := dohForwarderDial(mockDoH(t))
++	for _, network := range []string{"udp", "tcp"} {
++		conn, err := dial(t.Context(), network, "192.0.2.1:53")
++		if err != nil {
++			t.Fatalf("dial %s: %v", network, err)
++		}
++		switch conn.(type) {
++		case *net.UDPConn, *net.TCPConn:
++			t.Fatalf("dial %s returned a kernel socket %T", network, conn)
++		}
++		_ = conn.Close()
++	}
++
++	resolver := newAppDialer(dial).Resolver
++	addrs, err := resolver.LookupNetIP(t.Context(), "ip4", "example.com")
++	if err != nil {
++		t.Fatalf("LookupNetIP: %v", err)
++	}
++	if len(addrs) != 1 || addrs[0] != netip.MustParseAddr("9.9.9.9") {
++		t.Fatalf("LookupNetIP = %v, want [9.9.9.9]", addrs)
++	}
++}
+diff --git a/mobile/api.go b/mobile/api.go
+index 80d69e3..7e27237 100644
+--- a/mobile/api.go
++++ b/mobile/api.go
+@@ -43,6 +43,9 @@ var ErrTunnelRequiresStartTunnel = errors.New("tunnel mode requires StartTunnel
+ // принятый fd остался бы установленным вхолостую, а трафик устройства - в чёрной дыре.
+ var ErrTCPModeRequiresStart = errors.New("proxy mode tcp requires Start without a tun fd")
+ 
++// ErrPipeRequiresUDP - in-process пайп возит только датаграммы WireGuard.
++var ErrPipeRequiresUDP = errors.New("pipe mode requires proxy mode udp")
++
+ var version = "dev"
+ 
+ func Version() string { return version }
+@@ -143,7 +146,7 @@ func Start(configJSON string) error {
+ 	if current.Load() != nil {
+ 		return errors.New("already running")
+ 	}
+-	return startLocked(configJSON, 0, false)
++	return startLocked(configJSON, 0, false, nil)
+ }
+ 
+ // Restart перезапускает сессию. tunFD - дубликат дескриптора (0 для режима прокси).
+@@ -154,7 +157,7 @@ func Restart(configJSON string, tunFD int) error {
+ 	mu.Lock()
+ 	defer mu.Unlock()
+ 	stopLocked()
+-	return startLocked(configJSON, tunFD, tunFD > 0)
++	return startLocked(configJSON, tunFD, tunFD > 0, nil)
+ }
+ 
+ func Stop() {
+@@ -269,7 +272,7 @@ func parseStartConfig(raw []byte, withTunnel bool) (*config.Client, error) {
+ 	return cfg, nil
+ }
+ 
+-func startLocked(configJSON string, tunFD int, withTunnel bool) error { //nolint:funlen // лимит превышен на 3 оператора из-за обработчиков капчи; разбиение ухудшит читаемость
++func startLocked(configJSON string, tunFD int, withTunnel bool, pipe *tunnelParts) error { //nolint:funlen // лимит превышен на 3 оператора из-за обработчиков капчи; разбиение ухудшит читаемость
+ 	// До backend.Up дескриптор закрывается при ошибке инициализации.
+ 	ownFD := withTunnel
+ 	defer func() {
+@@ -282,6 +285,9 @@ func startLocked(configJSON string, tunFD int, withTunnel bool) error { //nolint
+ 	if err != nil {
+ 		return err
+ 	}
++	if pipe != nil && cfg.Proxy.Mode != config.ProxyModeUDP {
++		return ErrPipeRequiresUDP // tcp-режим слушает локальный порт
++	}
+ 
+ 	logger := &sinkLogger{debug: cfg.Log.Debug, buf: sharedLogBuf}
+ 
+@@ -292,6 +298,8 @@ func startLocked(configJSON string, tunFD int, withTunnel bool) error { //nolint
+ 		if err != nil {
+ 			return err
+ 		}
++	} else if pipe != nil {
++		parts = pipe
+ 	}
+ 
+ 	var captchaActive atomic.Bool
+@@ -338,7 +346,7 @@ func startLocked(configJSON string, tunFD int, withTunnel bool) error { //nolint
+ 		return err
+ 	}
+ 
+-	if parts != nil {
++	if parts != nil && parts.backend != nil {
+ 		ownFD = false // Up забирает владение дескриптором
+ 		if err := parts.backend.Up(tunCfg, tunFD); err != nil {
+ 			parts.close()
+diff --git a/mobile/pipe.go b/mobile/pipe.go
+new file mode 100644
+index 0000000..8ac43c6
+--- /dev/null
++++ b/mobile/pipe.go
+@@ -0,0 +1,41 @@
++package mobile
++
++import (
++	"errors"
++	"net"
++
++	"github.com/samosvalishe/free-turn-proxy/internal/netconn"
++)
++
++// StartPipe запускает релей без tun и локального сокета: хост сам гонит WireGuard-датаграммы через
++// возвращённый net.Conn. Только для Go-кода в том же bind; gobind функцию пропускает.
++func StartPipe(configJSON string, mtu int) (net.Conn, error) {
++	mu.Lock()
++	defer mu.Unlock()
++	if current.Load() != nil {
++		return nil, errors.New("already running")
++	}
++	if mtu <= 0 {
++		mtu = 1280
++	}
++	deviceSide, relaySide := netconn.PacketPipe(mtu+tunnelPipeHeadroom, 0)
++	parts := &tunnelParts{deviceSide: deviceSide, relaySide: relaySide}
++	if err := startLocked(configJSON, 0, false, parts); err != nil {
++		parts.close()
++		return nil, err
++	}
++	return &pipeConn{PacketConn: deviceSide, remote: relaySide.LocalAddr()}, nil
++}
++
++type pipeConn struct {
++	net.PacketConn
++	remote net.Addr
++}
++
++func (c *pipeConn) Read(b []byte) (int, error) {
++	n, _, err := c.ReadFrom(b)
++	return n, err
++}
++
++func (c *pipeConn) Write(b []byte) (int, error) { return c.WriteTo(b, c.remote) }
++func (c *pipeConn) RemoteAddr() net.Addr        { return c.remote }
+diff --git a/mobile/pipe_test.go b/mobile/pipe_test.go
+new file mode 100644
+index 0000000..7927899
+--- /dev/null
++++ b/mobile/pipe_test.go
+@@ -0,0 +1,46 @@
++package mobile
++
++import (
++	"errors"
++	"testing"
++	"time"
++)
++
++func TestStartPipeRejectsTCPMode(t *testing.T) {
++	t.Cleanup(Stop)
++	const tcpConfig = `{"peer":"1.2.3.4:5000","clientId":"deadbeef","proxy":{"mode":"tcp"},"vk":{"links":["https://vk.ru/call/join/CODE"]}}`
++	if _, err := StartPipe(tcpConfig, 1280); !errors.Is(err, ErrPipeRequiresUDP) {
++		t.Fatalf("StartPipe(tcp) error = %v, want ErrPipeRequiresUDP", err)
++	}
++	if got := GetState().State; got != StateIdle {
++		t.Fatalf("GetState().State = %q after rejected StartPipe, want idle", got)
++	}
++}
++
++func TestStartPipeStopUnblocksReader(t *testing.T) {
++	t.Cleanup(Stop)
++	conn, err := StartPipe(testConfig, 1280)
++	if err != nil {
++		t.Fatalf("StartPipe() error = %v", err)
++	}
++	if conn.RemoteAddr() == nil {
++		t.Fatal("pipe conn has no remote address")
++	}
++	if _, err := StartPipe(testConfig, 1280); err == nil {
++		t.Fatal("second StartPipe() succeeded, want already running")
++	}
++	readErr := make(chan error, 1)
++	go func() {
++		_, err := conn.Read(make([]byte, 2048))
++		readErr <- err
++	}()
++	Stop()
++	select {
++	case err := <-readErr:
++		if err == nil {
++			t.Fatal("Read() after Stop returned nil error")
++		}
++	case <-time.After(5 * time.Second):
++		t.Fatal("Read() still blocked after Stop")
++	}
++}
+diff --git a/mobile/tunnel.go b/mobile/tunnel.go
+index aaefc25..a41788e 100644
+--- a/mobile/tunnel.go
++++ b/mobile/tunnel.go
+@@ -29,7 +29,7 @@ type TunnelSnapshot struct {
+ 
+ func TunnelStats() *TunnelSnapshot {
+ 	l := current.Load()
+-	if l == nil || l.tunnel == nil {
++	if l == nil || l.tunnel == nil || l.tunnel.backend == nil {
+ 		return &TunnelSnapshot{HandshakeAgeSec: -1}
+ 	}
+ 	st, err := l.tunnel.backend.Stats()
+@@ -166,7 +166,7 @@ func StartTunnel(configJSON string, tunFD int) error {
+ 		awg.CloseTUNFD(tunFD)
+ 		return errors.New("already running")
+ 	}
+-	return startLocked(configJSON, tunFD, true)
++	return startLocked(configJSON, tunFD, true, nil)
+ }
+ 
+ // checkTunFD валидирует FD до передачи ядру (0 - stdin процесса).

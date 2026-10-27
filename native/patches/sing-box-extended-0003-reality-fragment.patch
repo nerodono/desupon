@@ -1,0 +1,23 @@
+diff --git a/common/tls/reality_client.go b/common/tls/reality_client.go
+index 5cb1abb..d27ee11 100644
+--- a/common/tls/reality_client.go
++++ b/common/tls/reality_client.go
+@@ -28,6 +28,7 @@ import (
+ 	"unsafe"
+ 
+ 	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/common/tlsfragment"
+ 	C "github.com/sagernet/sing-box/constant"
+ 	"github.com/sagernet/sing-box/option"
+ 	"github.com/sagernet/sing/common"
+@@ -140,6 +141,10 @@ func (e *RealityClientConfig) ClientHandshake(ctx context.Context, conn net.Conn
+ 	uConfig.InsecureSkipVerify = true
+ 	uConfig.SessionTicketsDisabled = true
+ 	uConfig.VerifyPeerCertificate = verifier.VerifyPeerCertificate
++	// Desupon: REALITY builds its own uTLS conn, so the uTLS client's ClientHello fragmentation is applied here.
++	if e.uClient.fragment || e.uClient.recordFragment {
++		conn = tf.NewConn(conn, ctx, e.uClient.fragment, e.uClient.recordFragment, e.uClient.fragmentFallbackDelay)
++	}
+ 	uConn := utls.UClient(conn, uConfig, e.uClient.id)
+ 	verifier.UConn = uConn
+ 	err := uConn.BuildHandshakeState()

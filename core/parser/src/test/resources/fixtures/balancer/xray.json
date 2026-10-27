@@ -1,0 +1,106 @@
+[
+  {
+    "remarks": "🇩🇪 Germany balanced",
+    "outbounds": [
+      {
+        "tag": "proxy-1", "protocol": "vless",
+        "settings": {"vnext": [{"address": "de1.example.com", "port": 443,
+          "users": [{"id": "00000000-0000-4000-8000-0000000000b1", "flow": "xtls-rprx-vision", "encryption": "none"}]}]},
+        "streamSettings": {"network": "tcp", "security": "reality",
+          "realitySettings": {"serverName": "www.example.org", "fingerprint": "chrome",
+            "password": "c3ludGhldGljLXhyYXktcmVhbGl0eS1rZXktMDAwMDE", "shortId": "b1"},
+          "sockopt": {"dialerProxy": "fragment"}}
+      },
+      {
+        "tag": "proxy-2", "protocol": "vless",
+        "settings": {"vnext": [{"address": "de2.example.com", "port": 443,
+          "users": [{"id": "00000000-0000-4000-8000-0000000000b2", "encryption": "none"}]}]},
+        "streamSettings": {"network": "grpc", "security": "reality", "grpcSettings": {"serviceName": "tun"},
+          "realitySettings": {"serverName": "www.example.org", "fingerprint": "chrome",
+            "password": "c3ludGhldGljLXhyYXktcmVhbGl0eS1rZXktMDAwMDE", "shortId": "b2"},
+          "sockopt": {"dialerProxy": "fragment"}}
+      },
+      {
+        "tag": "proxy-3", "protocol": "vless",
+        "settings": {"vnext": [{"address": "de3.example.com", "port": 443,
+          "users": [{"id": "00000000-0000-4000-8000-0000000000b3", "encryption": "none"}]}]},
+        "streamSettings": {"network": "xhttp", "security": "reality",
+          "xhttpSettings": {"path": "/x", "mode": "auto", "extra": {"xPaddingBytes": "100-1000"}},
+          "realitySettings": {"serverName": "www.example.org", "fingerprint": "chrome",
+            "password": "c3ludGhldGljLXhyYXktcmVhbGl0eS1rZXktMDAwMDE", "shortId": "b3"},
+          "sockopt": {"dialerProxy": "fragment"}}
+      },
+      {
+        "tag": "proxy-4", "protocol": "vless",
+        "settings": {"vnext": [{"address": "de1.example.com", "port": 443,
+          "users": [{"id": "00000000-0000-4000-8000-0000000000b1", "flow": "xtls-rprx-vision", "encryption": "none"}]}]},
+        "streamSettings": {"network": "tcp", "security": "reality",
+          "realitySettings": {"serverName": "www.example.org", "fingerprint": "chrome",
+            "password": "c3ludGhldGljLXhyYXktcmVhbGl0eS1rZXktMDAwMDE", "shortId": "b1"},
+          "sockopt": {"dialerProxy": "fragment"}}
+      },
+      {"tag": "fragment", "protocol": "freedom", "settings": {"fragment": {"packets": "tlshello", "length": "1-1", "interval": "0"}}},
+      {"tag": "direct", "protocol": "freedom"},
+      {"tag": "block", "protocol": "blackhole"}
+    ],
+    "routing": {
+      "domainStrategy": "IPIfNonMatch",
+      "balancers": [{"tag": "balancer", "selector": ["proxy-"], "strategy": {"type": "leastPing"}, "fallbackTag": "direct"}],
+      "rules": [{"type": "field", "network": "tcp,udp", "balancerTag": "balancer"}]
+    },
+    "observatory": {"subjectSelector": ["proxy-"], "probeUrl": "https://www.example.com/generate_204", "probeInterval": "1m"}
+  },
+  {
+    "remarks": "🇳🇱 NL burst",
+    "outbounds": [
+      {
+        "tag": "proxy", "protocol": "trojan",
+        "settings": {"servers": [{"address": "nl.example.com", "port": 443, "password": "synthetic-balancer-trojan"}]},
+        "streamSettings": {"network": "tcp", "security": "tls", "tlsSettings": {"serverName": "nl.example.com"}}
+      },
+      {
+        "tag": "lb-a", "protocol": "vless",
+        "settings": {"vnext": [{"address": "nl-a.example.com", "port": 443,
+          "users": [{"id": "00000000-0000-4000-8000-0000000000b4", "flow": "xtls-rprx-vision", "encryption": "none"}]}]},
+        "streamSettings": {"network": "tcp", "security": "reality",
+          "realitySettings": {"serverName": "www.example.org", "password": "c3ludGhldGljLXhyYXktcmVhbGl0eS1rZXktMDAwMDE", "shortId": "b4"}}
+      },
+      {
+        "tag": "lb-b", "protocol": "vless",
+        "settings": {"vnext": [{"address": "nl-b.example.com", "port": 443,
+          "users": [{"id": "00000000-0000-4000-8000-0000000000b5", "encryption": "none"}]}]},
+        "streamSettings": {"network": "tcp", "security": "reality",
+          "realitySettings": {"serverName": "www.example.org", "password": "c2hvcnQ", "shortId": "b5"}}
+      },
+      {
+        "tag": "lb-c", "protocol": "vmess",
+        "settings": {"vnext": [{"address": "nl-c.example.com", "port": 443,
+          "users": [{"id": "00000000-0000-4000-8000-0000000000b6", "security": "auto"}]}]},
+        "streamSettings": {"network": "ws", "security": "tls", "tlsSettings": {"serverName": "nl-c.example.com"},
+          "wsSettings": {"path": "/c"}, "sockopt": {"dialerProxy": "relay"}}
+      },
+      {
+        "tag": "relay", "protocol": "shadowsocks",
+        "settings": {"servers": [{"address": "relay.example.com", "port": 8388, "method": "chacha20-ietf-poly1305", "password": "synthetic-relay"}]}
+      },
+      {"tag": "direct", "protocol": "freedom"}
+    ],
+    "routing": {
+      "balancers": [{"tag": "burst", "selector": ["lb-"]}],
+      "rules": [{"type": "field", "domain": ["geosite:netflix"], "balancerTag": "burst"}, {"type": "field", "network": "tcp,udp", "outboundTag": "proxy"}]
+    },
+    "burstObservatory": {"subjectSelector": ["lb-"], "pingConfig": {"destination": "https://www.example.com/generate_204", "interval": "1m"}}
+  },
+  {
+    "remarks": "🇫🇮 unmatched balancer",
+    "outbounds": [
+      {
+        "tag": "proxy", "protocol": "trojan",
+        "settings": {"servers": [{"address": "fi.example.com", "port": 443, "password": "synthetic-balancer-trojan-fi"}]},
+        "streamSettings": {"network": "tcp", "security": "tls", "tlsSettings": {"serverName": "fi.example.com"}}
+      },
+      {"tag": "direct", "protocol": "freedom"}
+    ],
+    "routing": {"balancers": [{"tag": "none", "selector": ["missing-"]}]}
+  }
+]

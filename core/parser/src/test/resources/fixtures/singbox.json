@@ -1,0 +1,44 @@
+{
+  "log": {"level": "info"},
+  "outbounds": [
+    {"type": "selector", "tag": "proxy", "outbounds": ["auto", "reality-de"]},
+    {"type": "urltest", "tag": "auto", "outbounds": ["reality-de"]},
+    {"type": "direct", "tag": "direct"},
+    {
+      "type": "vless", "tag": "🇩🇪 reality-de", "server": "de.example.com", "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000b1", "flow": "xtls-rprx-vision-udp443",
+      "tls": {"enabled": true, "server_name": "www.example.org",
+        "utls": {"enabled": true, "fingerprint": "firefox"},
+        "reality": {"enabled": true, "public_key": "c3ludGhldGljLXJlYWxpdHktcHVibGljLWtleS0wMDE", "short_id": "0123abcd"}}
+    },
+    {
+      "type": "hysteria2", "tag": "hy2-us", "server": "us.example.com", "server_port": 8443, "password": "synthetic-pass",
+      "tls": {"enabled": true, "server_name": "us.example.com", "utls": {"enabled": true, "fingerprint": "chrome"}}
+    },
+    {
+      "type": "vless", "tag": "xhttp-h3 LTE", "server": "xh.example.com", "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000b2",
+      "tls": {"enabled": true, "server_name": "xh.example.com", "alpn": ["h3"], "utls": {"enabled": true, "fingerprint": "chrome"}},
+      "transport": {"type": "xhttp", "mode": "stream-one", "path": "/xh", "headers": {"Host": "cdn.example.com", "X-Test": "1"},
+        "download": {"host": "dl.example.com"}}
+    },
+    {
+      "type": "wireguard", "tag": "legacy-wg", "server": "192.0.2.10", "server_port": 51820,
+      "local_address": ["10.0.0.2/32"], "private_key": "c3ludGhldGljLWxlZ2FjeS13Zy1wcml2YXRlLWtleTE=",
+      "peer_public_key": "c3ludGhldGljLWxlZ2FjeS13Zy1wdWJsaWMta2V5MDE=", "reserved": [0, 0, 0]
+    },
+    {"type": "naive", "tag": "naive-x", "server": "nv.example.com", "server_port": 443},
+    {"type": "shadowsocks", "tag": "ss-chain", "server": "ss.example.com", "server_port": 8388, "method": "aes-128-gcm", "password": "pw", "detour": "proxy"},
+    {"tag": "no-type"}
+  ],
+  "endpoints": [
+    {
+      "type": "wireguard", "tag": "🇯🇵 awg-jp", "mtu": 1280, "address": ["10.9.0.2/32"],
+      "private_key": "c3ludGhldGljLWF3Zy1qcC1wcml2YXRlLWtleTAwMDE=",
+      "peers": [{"address": "203.0.113.30", "port": 40000, "public_key": "c3ludGhldGljLWF3Zy1qcC1wdWJsaWMta2V5MDAwMDE=",
+        "allowed_ips": ["0.0.0.0/0"], "reserved": "AAEC"}],
+      "amnezia": {"jc": 4, "jmin": 40, "jmax": 70, "s1": 5, "s2": 20, "h1": "100-200", "header_protection_key": "c3ludGhldGljLWF3Zy1qcC1ocGsta2V5LTAwMDAwMDE="}
+    }
+  ],
+  "route": {"final": "proxy"}
+}

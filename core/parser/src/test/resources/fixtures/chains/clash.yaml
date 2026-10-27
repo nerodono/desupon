@@ -1,0 +1,61 @@
+mixed-port: 7890
+mode: rule
+proxies:
+  - name: "ru-entry"
+    type: vless
+    server: ru-entry.example.com
+    port: 443
+    uuid: 00000000-0000-4000-8000-0000000000f1
+    flow: xtls-rprx-vision
+    network: tcp
+    tls: true
+    servername: ya.example.ru
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: c3ludGhldGljLXJlbGF5LXJlYWxpdHkta2V5LTAwMDE
+      short-id: f1
+  - name: "🇩🇪 DE via RU"
+    type: trojan
+    server: de-exit.example.com
+    port: 443
+    password: synthetic-clash-chain
+    sni: de-exit.example.com
+    dialer-proxy: ru-entry
+  - name: "🇳🇱 NL via group"
+    type: trojan
+    server: nl-exit.example.com
+    port: 443
+    password: synthetic-clash-group
+    dialer-proxy: RELAYS
+  - name: "🇫🇮 FI direct dialer"
+    type: ss
+    server: fi.example.com
+    port: 8388
+    cipher: aes-256-gcm
+    password: synthetic-clash-direct
+    dialer-proxy: DIRECT
+  - name: "🇸🇪 SE two hops"
+    type: vmess
+    server: se-exit.example.com
+    port: 443
+    uuid: 00000000-0000-4000-8000-0000000000f2
+    alterId: 0
+    cipher: auto
+    tls: true
+    servername: se-exit.example.com
+    network: ws
+    ws-opts:
+      path: /se
+    dialer-proxy: "🇩🇪 DE via RU"
+  - name: "broken hop"
+    type: trojan
+    server: broken.example.com
+    port: 443
+    password: synthetic-clash-broken
+    dialer-proxy: missing-node
+proxy-groups:
+  - name: RELAYS
+    type: select
+    proxies: ["ru-entry"]
+rules:
+  - MATCH,RELAYS

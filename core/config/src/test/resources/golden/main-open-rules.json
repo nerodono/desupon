@@ -1,0 +1,535 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "local"
+      },
+      {
+        "type": "https",
+        "tag": "remote",
+        "server": "1.1.1.1",
+        "detour": "proxy"
+      }
+    ],
+    "rules": [
+      {
+        "domain": [
+          "ads.example.com"
+        ],
+        "action": "reject"
+      },
+      {
+        "domain": [
+          "news.example.ru"
+        ],
+        "action": "route",
+        "server": "remote"
+      },
+      {
+        "domain_suffix": [
+          "ru"
+        ],
+        "action": "route",
+        "server": "local"
+      },
+      {
+        "domain_keyword": [
+          "yandex"
+        ],
+        "action": "route",
+        "server": "local"
+      },
+      {
+        "rule_set": [
+          "geosite-ru"
+        ],
+        "action": "route",
+        "server": "local"
+      }
+    ],
+    "final": "remote",
+    "strategy": "prefer_ipv4"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "address": [
+        "198.19.250.1/30",
+        "fdc8:6e1a:9d3f::1/126"
+      ],
+      "mtu": 1500,
+      "auto_route": true,
+      "stack": "gvisor"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "proxy",
+      "outbounds": [
+        "n-58098976f926abcb",
+        "n-82a189eaad411a37",
+        "n-e2a92cf576bdf872",
+        "n-35160ab3538a261d",
+        "n-16bd7f0682402b90",
+        "n-fe175b0ccf2694ef",
+        "n-0462f378189e3ca1",
+        "n-bd0e797fe9ebb8fa",
+        "n-8e1a9a2f649fdf73",
+        "n-39567be98fd56d83",
+        "n-c26d3ca30a9bd867",
+        "n-44fa100eb4bb2a91",
+        "n-50f1ae0e04ada568",
+        "n-effac804ac2487b2",
+        "n-4cb7c2198d8bd600"
+      ],
+      "default": "n-58098976f926abcb",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "vless",
+      "tag": "n-58098976f926abcb",
+      "server": "xh.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-00000000c0de",
+      "tls": {
+        "enabled": true,
+        "server_name": "xh.example.com",
+        "alpn": [
+          "h2",
+          "http/1.1"
+        ],
+        "utls": {
+          "enabled": true,
+          "fingerprint": "random"
+        }
+      },
+      "transport": {
+        "type": "xhttp",
+        "mode": "stream-one",
+        "path": "/xh",
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (synthetic)"
+        },
+        "x_padding_bytes": "100-1000",
+        "host": "cdn.example.com"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "n-82a189eaad411a37",
+      "server": "xh3.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-00000000c0de",
+      "tls": {
+        "enabled": true,
+        "server_name": "xh3.example.com",
+        "alpn": [
+          "h3",
+          "h2"
+        ]
+      },
+      "transport": {
+        "type": "xhttp",
+        "mode": "stream-one",
+        "host": "xh3.example.com",
+        "path": "/q",
+        "x_padding_bytes": "200-800"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "n-e2a92cf576bdf872",
+      "server": "203.0.113.20",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-00000000c0de",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.example.org",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU",
+          "short_id": "0123abcd",
+          "support_x25519mlkem768": true
+        }
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "n-35160ab3538a261d",
+      "server": "203.0.113.21",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-00000000c0de",
+      "flow": "xtls-rprx-vision",
+      "encryption": "mlkem768x25519plus.native.0rtt.ZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmY",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "vmess",
+      "tag": "n-16bd7f0682402b90",
+      "server": "vm.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-00000000c0de",
+      "security": "auto",
+      "tls": {
+        "enabled": true,
+        "server_name": "vm.example.com"
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/ws",
+        "headers": {
+          "Host": "vm.example.com"
+        }
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "n-fe175b0ccf2694ef",
+      "server": "tj.example.com",
+      "server_port": 443,
+      "password": "synthetic-password-7f3a",
+      "tls": {
+        "enabled": true,
+        "server_name": "tj.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "type": "grpc",
+        "service_name": "svc"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "n-0462f378189e3ca1",
+      "server": "198.51.100.7",
+      "server_port": 8388,
+      "method": "2022-blake3-aes-128-gcm",
+      "password": "WlpaWlpaWlpaWlpaWlpaWg==",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "n-bd0e797fe9ebb8fa",
+      "server": "hy2.example.com",
+      "server_port": 8443,
+      "server_ports": [
+        "20000:30000"
+      ],
+      "hop_interval": "30s",
+      "password": "synthetic-password-7f3a",
+      "obfs": {
+        "type": "salamander",
+        "password": "synthetic-obfs-9b2c"
+      },
+      "tls": {
+        "enabled": true,
+        "server_name": "hy2.example.com",
+        "alpn": [
+          "h3"
+        ]
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "hysteria",
+      "tag": "n-8e1a9a2f649fdf73",
+      "server": "hy1.example.com",
+      "server_port": 8443,
+      "up_mbps": 50,
+      "down_mbps": 200,
+      "auth_str": "synthetic-password-7f3a",
+      "obfs": "synthetic-obfs-9b2c",
+      "tls": {
+        "enabled": true,
+        "server_name": "hy1.example.com",
+        "alpn": [
+          "hysteria"
+        ]
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "tuic",
+      "tag": "n-39567be98fd56d83",
+      "server": "tuic.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-00000000c0de",
+      "password": "synthetic-password-7f3a",
+      "congestion_control": "bbr",
+      "tls": {
+        "enabled": true,
+        "server_name": "tuic.example.com",
+        "alpn": [
+          "h3"
+        ]
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "anytls",
+      "tag": "n-c26d3ca30a9bd867",
+      "server": "any.example.com",
+      "server_port": 443,
+      "password": "synthetic-password-7f3a",
+      "tls": {
+        "enabled": true,
+        "server_name": "any.example.com"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "socks",
+      "tag": "n-44fa100eb4bb2a91",
+      "server": "198.51.100.8",
+      "server_port": 1080,
+      "version": "5",
+      "username": "u",
+      "password": "synthetic-password-7f3a",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "http",
+      "tag": "n-50f1ae0e04ada568",
+      "server": "198.51.100.9",
+      "server_port": 3128,
+      "username": "u",
+      "password": "synthetic-password-7f3a",
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "n-effac804ac2487b2",
+      "mtu": 1408,
+      "address": [
+        "10.66.0.2/32"
+      ],
+      "private_key": "ERERERERERERERERERERERERERERERERERERERERERE=",
+      "peers": [
+        {
+          "address": "198.51.100.10",
+          "port": 51820,
+          "public_key": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
+          "pre_shared_key": "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM=",
+          "allowed_ips": [
+            "0.0.0.0/0",
+            "::/0"
+          ]
+        }
+      ],
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    },
+    {
+      "type": "wireguard",
+      "tag": "n-4cb7c2198d8bd600",
+      "mtu": 1399,
+      "address": [
+        "10.8.0.2/32"
+      ],
+      "private_key": "ERERERERERERERERERERERERERERERERERERERERERE=",
+      "peers": [
+        {
+          "address": "198.51.100.11",
+          "port": 10481,
+          "public_key": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
+          "pre_shared_key": "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM=",
+          "allowed_ips": [
+            "0.0.0.0/0",
+            "::/0"
+          ]
+        }
+      ],
+      "amnezia": {
+        "jc": 3,
+        "jmin": 87,
+        "jmax": 159,
+        "s1": 38,
+        "s2": 22,
+        "s3": 23,
+        "s4": 21,
+        "h1": "100000000-100999999",
+        "h2": "200000000-200999999",
+        "h3": "300000000-300999999",
+        "h4": "400000000-400999999",
+        "i1": "<r 256>",
+        "header_protection_key": "REREREREREREREREREREREREREREREREREREREREREQ=",
+        "content_padding_addition": "0-16",
+        "rekey_after_time": "100-140",
+        "rekey_timeout": "4-6",
+        "reject_after_time": "170-190",
+        "keepalive_timeout": "9-11",
+        "max_handshake_attempts": "18-22",
+        "random_trailers": true,
+        "disable_cookies": true
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      },
+      {
+        "package_name": [
+          "moe.desupon.app"
+        ],
+        "action": "route",
+        "outbound": "proxy"
+      },
+      {
+        "domain": [
+          "ads.example.com"
+        ],
+        "action": "reject"
+      },
+      {
+        "domain": [
+          "news.example.ru"
+        ],
+        "action": "route",
+        "outbound": "proxy"
+      },
+      {
+        "domain_suffix": [
+          "ru"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "domain_keyword": [
+          "yandex"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "ip_cidr": [
+          "77.88.0.0/18"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "ip_cidr": [
+          "2a02:6b8::/32"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "rule_set": [
+          "geosite-ru"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "rule_set": [
+          "geoip-ru"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "geosite-ru",
+        "format": "binary",
+        "path": "/data/user/0/moe.desupon.app/files/rules/geosite-ru.srs"
+      },
+      {
+        "type": "local",
+        "tag": "geoip-ru",
+        "format": "binary",
+        "path": "/data/user/0/moe.desupon.app/files/rules/geoip-ru.srs"
+      }
+    ],
+    "final": "proxy",
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local",
+      "strategy": "prefer_ipv4"
+    }
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true
+    }
+  }
+}

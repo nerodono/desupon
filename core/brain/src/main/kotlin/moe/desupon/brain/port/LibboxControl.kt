@@ -1,0 +1,27 @@
+package moe.desupon.brain.port
+
+import kotlinx.coroutines.flow.Flow
+import moe.desupon.model.routing.AppSplit
+import moe.desupon.model.status.ConnInfo
+import moe.desupon.model.status.GroupInfo
+import moe.desupon.model.status.TrafficStatus
+
+/** The only way the brain drives the core. */
+interface LibboxControl {
+    val groups: Flow<List<GroupInfo>>
+    val status: Flow<TrafficStatus>
+    val connections: Flow<List<ConnInfo>>
+
+    /**
+     * Starts the service or replaces its config, restarting TUN; throws on core errors.
+     * Implementations keep the own package tunnelled whatever [apps] says.
+     */
+    suspend fun reload(configJson: String, apps: AppSplit)
+
+    /** Switches a selector member without restarting; after [reload] the selector restores its cached choice, so select again. */
+    suspend fun select(group: String, tag: String)
+
+    suspend fun closeConnections()
+
+    suspend fun stop()
+}

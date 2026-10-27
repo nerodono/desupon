@@ -1,0 +1,74 @@
+[
+  {
+    "remarks": "🇳🇱 Reality NL",
+    "outbounds": [
+      {
+        "tag": "proxy", "protocol": "vless",
+        "settings": {"vnext": [{"address": "nl2.example.com", "port": 443,
+          "users": [{"id": "00000000-0000-4000-8000-0000000000c1", "flow": "xtls-rprx-vision", "encryption": "none"}]}]},
+        "streamSettings": {"network": "tcp", "security": "reality",
+          "realitySettings": {"serverName": "www.example.org", "fingerprint": "safari",
+            "password": "c3ludGhldGljLXhyYXktcmVhbGl0eS1rZXktMDAwMDE", "shortId": "a1b2", "spiderX": "/"}}
+      },
+      {"tag": "direct", "protocol": "freedom"},
+      {"tag": "block", "protocol": "blackhole"}
+    ]
+  },
+  {
+    "remarks": "vmess ws",
+    "outbounds": [
+      {
+        "tag": "proxy", "protocol": "vmess",
+        "settings": {"vnext": [{"address": "vm.example.com", "port": 8443,
+          "users": [{"id": "00000000-0000-4000-8000-0000000000c2", "alterId": 0, "security": "auto"}]}]},
+        "streamSettings": {"network": "ws", "security": "tls",
+          "tlsSettings": {"serverName": "vm.example.com", "alpn": ["http/1.1"], "fingerprint": "chrome"},
+          "wsSettings": {"path": "/ws?ed=2048", "headers": {"Host": "vm.example.com"}}}
+      }
+    ]
+  },
+  {
+    "remarks": "trojan grpc",
+    "outbounds": [
+      {
+        "tag": "proxy", "protocol": "trojan",
+        "settings": {"servers": [{"address": "tj.example.com", "port": 443, "password": "synthetic-trojan"}]},
+        "streamSettings": {"network": "grpc", "security": "tls", "grpcSettings": {"serviceName": "tunnel"}, "tlsSettings": {"serverName": "tj.example.com"}}
+      }
+    ]
+  },
+  {
+    "remarks": "xhttp via extra",
+    "outbounds": [
+      {
+        "tag": "proxy", "protocol": "vless",
+        "settings": {"address": "xx.example.com", "port": 443, "id": "00000000-0000-4000-8000-0000000000c3", "encryption": "none"},
+        "streamSettings": {"network": "xhttp", "security": "tls", "tlsSettings": {"serverName": "xx.example.com"},
+          "xhttpSettings": {"path": "/p", "mode": "packet-up", "extra": {"xPaddingBytes": "200-400", "noGRPCHeader": true,
+            "xmux": {"maxConcurrency": "16-32", "hKeepAlivePeriod": 30}, "scMaxEachPostBytes": 1000000}}}
+      }
+    ]
+  },
+  {
+    "remarks": "chained",
+    "outbounds": [
+      {
+        "tag": "proxy", "protocol": "trojan",
+        "settings": {"servers": [{"address": "ch.example.com", "port": 443, "password": "p"}]},
+        "streamSettings": {"network": "tcp", "security": "tls", "sockopt": {"dialerProxy": "frag"}}
+      },
+      {"tag": "frag", "protocol": "freedom", "settings": {"fragment": {"packets": "tlshello"}}}
+    ]
+  },
+  {
+    "remarks": "hysteria xray",
+    "outbounds": [{"tag": "proxy", "protocol": "hysteria", "settings": {"version": 2, "address": "h.example.com", "port": 443},
+      "streamSettings": {"network": "hysteria", "hysteriaSettings": {"version": 2, "auth": "synthetic-hy2-auth"},
+        "security": "tls", "tlsSettings": {"serverName": "h.example.com", "alpn": ["h3"]},
+        "finalmask": {"udp": [{"type": "salamander", "settings": {"password": "synthetic-hy2-obfs", "packetSize": "512-1400"}}]}}}]
+  },
+  {
+    "remarks": "direct only",
+    "outbounds": [{"tag": "direct", "protocol": "freedom"}]
+  }
+]

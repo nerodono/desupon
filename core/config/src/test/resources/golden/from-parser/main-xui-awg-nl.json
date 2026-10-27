@@ -1,0 +1,128 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "local"
+      },
+      {
+        "type": "https",
+        "tag": "remote",
+        "server": "1.1.1.1",
+        "detour": "proxy"
+      }
+    ],
+    "final": "remote",
+    "strategy": "prefer_ipv4"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "address": [
+        "198.19.250.1/30",
+        "fdc8:6e1a:9d3f::1/126"
+      ],
+      "mtu": 1500,
+      "auto_route": true,
+      "stack": "gvisor"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "proxy",
+      "outbounds": [
+        "n-ba84c5070e84e67e"
+      ],
+      "default": "n-ba84c5070e84e67e",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "n-ba84c5070e84e67e",
+      "mtu": 1399,
+      "address": [
+        "10.8.1.30/32"
+      ],
+      "private_key": "ZGVzdXBvbi1zeW50aGV0aWMtd2ctcHJpdmF0ZS1rMDE=",
+      "peers": [
+        {
+          "address": "nl.example.com",
+          "port": 10481,
+          "public_key": "ZGVzdXBvbi1zeW50aGV0aWMtYXdnLXB1YmtleS1ubDE=",
+          "pre_shared_key": "ZGVzdXBvbi1zeW50aGV0aWMtYXdnLXByZXNoYXJlZGs=",
+          "allowed_ips": [
+            "0.0.0.0/0",
+            "::/0"
+          ]
+        }
+      ],
+      "amnezia": {
+        "jc": 3,
+        "jmin": 87,
+        "jmax": 159,
+        "s1": 38,
+        "s2": 22,
+        "s3": 23,
+        "s4": 21,
+        "h1": "1020304050-1020304999",
+        "h2": "2030405060-2030405999",
+        "h3": "3040506070-3040506999",
+        "h4": "4050607080-4050607999",
+        "content_padding_addition": "0-16",
+        "rekey_after_time": "110-130",
+        "rekey_timeout": "4-6",
+        "reject_after_time": "170-190",
+        "keepalive_timeout": "9-11",
+        "max_handshake_attempts": "18-22",
+        "i1": "<r 256>",
+        "header_protection_key": "ZGVzdXBvbi1zeW50aGV0aWMtYXdnLWhway1rZXktMDE=",
+        "random_trailers": true,
+        "disable_cookies": true
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      },
+      {
+        "package_name": [
+          "moe.desupon.app"
+        ],
+        "action": "route",
+        "outbound": "proxy"
+      }
+    ],
+    "final": "proxy",
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local",
+      "strategy": "prefer_ipv4"
+    }
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true
+    }
+  }
+}

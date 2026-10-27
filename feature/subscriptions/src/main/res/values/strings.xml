@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="subs_title">Подписки</string>
+    <string name="subs_update_all">Полить сад</string>
+    <string name="subs_update_all_cd">Обновить все подписки</string>
+    <string name="subs_add">Добавить</string>
+    <string name="subs_empty_title">Подписок пока нет</string>
+    <string name="subs_empty_title_desu">Сад пока пуст, десу</string>
+    <string name="subs_tab_subscriptions">Подписки</string>
+    <string name="subs_tab_sets">Наборы</string>
+    <string name="subs_edit">Изменить</string>
+    <string name="subs_move_up">Выше</string>
+    <string name="subs_move_down">Ниже</string>
+    <string name="subs_empty_hint">Добавьте ссылку на подписку, вставьте серверы из буфера или отсканируйте QR-код</string>
+
+    <!-- Card -->
+    <string name="subs_untitled">Подписка №%1$d</string>
+    <string name="subs_local_title">Свой список</string>
+    <string name="subs_local_badge">локальная</string>
+    <plurals name="subs_nodes" tools:ignore="UnusedQuantity">
+        <item quantity="one">%d сервер</item>
+        <item quantity="few">%d сервера</item>
+        <item quantity="many">%d серверов</item>
+        <item quantity="other">%d сервера</item>
+    </plurals>
+    <string name="subs_unsupported">не поддерживается: %1$d</string>
+    <string name="subs_unreadable">нечитаемо: %1$d</string>
+    <string name="subs_traffic">%1$s из %2$s</string>
+    <string name="subs_traffic_unlimited">Использовано %1$s</string>
+    <plurals name="subs_days_left" tools:ignore="UnusedQuantity">
+        <item quantity="one">Остался %d день</item>
+        <item quantity="few">Осталось %d дня</item>
+        <item quantity="many">Осталось %d дней</item>
+        <item quantity="other">Осталось %d дня</item>
+    </plurals>
+    <string name="subs_less_than_day">Меньше суток</string>
+    <string name="subs_expired">Срок истёк</string>
+    <string name="subs_update">Обновить</string>
+    <string name="subs_nodes_open">Серверы</string>
+    <string name="subs_more_cd">Действия с подпиской</string>
+    <string name="subs_user_agent">User-Agent</string>
+    <string name="subs_user_agent_custom">свой User-Agent</string>
+    <string name="subs_card_sets">Наборы: %1$s</string>
+    <plurals name="subs_card_mirrors" tools:ignore="UnusedQuantity">
+        <item quantity="one">+%d зеркало</item>
+        <item quantity="few">+%d зеркала</item>
+        <item quantity="many">+%d зеркал</item>
+        <item quantity="other">+%d зеркала</item>
+    </plurals>
+    <string name="subs_cleartext_warning">Адрес без шифрования (http): ссылка и токен подписки передаются открытым текстом</string>
+    <string name="subs_delete">Удалить</string>
+
+    <!-- Dialogs -->
+    <string name="subs_cancel">Отмена</string>
+    <string name="subs_save">Сохранить</string>
+    <string name="subs_close">Закрыть</string>
+    <string name="subs_rename_hint">Пусто — название от провайдера</string>
+    <string name="subs_delete_title">Удалить подписку?</string>
+    <string name="subs_delete_text">«%1$s» и её серверы будут удалены с устройства.</string>
+
+    <!-- Add -->
+    <string name="subs_add_title">Новая подписка</string>
+    <string name="subs_add_field">Ссылка или серверы</string>
+    <string name="subs_add_field_hint">Ссылка на подписку, несколько ссылок по строкам или содержимое подписки</string>
+    <string name="subs_add_paste">Из буфера</string>
+    <string name="subs_add_scan">Сканировать QR</string>
+    <string name="subs_add_image">QR из фото</string>
+    <string name="subs_add_confirm">Добавить</string>
+    <string name="subs_add_clipboard_empty">В буфере обмена нет текста</string>
+    <string name="subs_add_nothing">Не найдено ни ссылки на подписку, ни серверов</string>
+    <string name="subs_add_exists">Эта подписка уже добавлена</string>
+    <string name="subs_qr_not_found">QR-код не распознан</string>
+    <string name="subs_qr_image_error">Не удалось открыть изображение</string>
+    <string name="subs_camera_denied">Нет доступа к камере</string>
+    <string name="subs_camera_error">Камера недоступна</string>
+    <string name="subs_qr_hint">Наведите камеру на QR-код</string>
+
+    <!-- Results -->
+    <plurals name="subs_result_updated" tools:ignore="UnusedQuantity">
+        <item quantity="one">Обновлено: %d сервер</item>
+        <item quantity="few">Обновлено: %d сервера</item>
+        <item quantity="many">Обновлено: %d серверов</item>
+        <item quantity="other">Обновлено: %d сервера</item>
+    </plurals>
+    <plurals name="subs_result_imported" tools:ignore="UnusedQuantity">
+        <item quantity="one">Добавлен %d сервер</item>
+        <item quantity="few">Добавлено %d сервера</item>
+        <item quantity="many">Добавлено %d серверов</item>
+        <item quantity="other">Добавлено %d сервера</item>
+    </plurals>
+    <plurals name="subs_result_added" tools:ignore="UnusedQuantity">
+        <item quantity="one">Добавлена %d подписка</item>
+        <item quantity="few">Добавлено %d подписки</item>
+        <item quantity="many">Добавлено %d подписок</item>
+        <item quantity="other">Добавлено %d подписки</item>
+    </plurals>
+    <string name="subs_result_added_failed">Подписка добавлена, но не обновилась: %1$s</string>
+    <string name="subs_result_throttled">Слишком частые обновления, попробуйте позже</string>
+    <string name="subs_result_local">Свой список не привязан к ссылке, обновлять нечего</string>
+    <string name="subs_result_not_found">Подписка не найдена</string>
+    <string name="subs_result_all_ok">Сад полит: обновлено %1$d из %2$d</string>
+    <string name="subs_result_all_partial">Обновлено %1$d из %2$d, с ошибкой: %3$d</string>
+    <string name="subs_result_all_none">Нет подписок для обновления</string>
+    <string name="subs_deleted">Подписка удалена</string>
+
+    <!-- Fetch error codes -->
+    <string name="subs_error_unauthorized">Доступ запрещён (HTTP %1$d): подписка истекла или ссылка отозвана</string>
+    <string name="subs_error_not_found">Подписка не найдена на сервере (HTTP %1$d)</string>
+    <string name="subs_error_rate_limited">Сервер ограничил частоту запросов (HTTP %1$d)</string>
+    <string name="subs_error_server">Сбой на сервере подписки (HTTP %1$d)</string>
+    <string name="subs_error_http">Сервер подписки ответил ошибкой (HTTP %1$d)</string>
+    <string name="subs_error_timeout">Сервер подписки не ответил вовремя</string>
+    <string name="subs_error_network">Нет связи с сервером подписки</string>
+    <string name="subs_error_empty">Сервер вернул пустой ответ</string>
+    <string name="subs_error_too_large">Ответ сервера слишком большой</string>
+    <string name="subs_error_no_nodes">В ответе не нашлось ни одного сервера</string>
+    <string name="subs_error_no_endpoints">Некорректный адрес подписки</string>
+    <string name="subs_error_unknown">Не удалось обновить подписку</string>
+
+    <!-- Nodes view -->
+    <string name="subs_nodes_empty">В подписке нет серверов</string>
+    <string name="subs_nodes_empty_desu">На этой грядке ничего не растёт, десу</string>
+    <string name="subs_node_supported">поддерживается</string>
+    <string name="subs_node_unsupported">не поддерживается</string>
+    <string name="subs_node_unsupported_reason">не поддерживается: %1$s</string>
+    <string name="subs_back">Назад</string>
+
+
+    <!-- Priority chain -->
+    <string name="subs_chain_title">⛓ Сначала по порядку</string>
+    <string name="subs_chain_footer">↓ если все недоступны</string>
+    <string name="subs_chain_rest">Остальные · самый быстрый из них</string>
+    <string name="subs_chain_drop">Перетащите сюда подписку, чтобы она пробовалась первой</string>
+    <string name="subs_chain_rest_empty">Все подписки в приоритете. Перетащите сюда подписку, чтобы убрать её из очереди</string>
+    <string name="subs_chain_now">сейчас</string>
+    <string name="subs_chain_add">В приоритет</string>
+    <string name="subs_chain_remove">Убрать из приоритета</string>
+    <string name="subs_chain_drag_cd">Перетащить</string>
+    <string name="subs_chain_summary">⛓ %1$s</string>
+    <string name="subs_chain_rest_short">остальные</string>
+
+    <!-- Sets -->
+    <string name="subs_sets_explain">Набор — какие подписки участвуют в автовыборе</string>
+    <string name="subs_sets_all">Все подписки</string>
+    <string name="subs_sets_all_hint">все подписки, включая новые</string>
+    <string name="subs_sets_active">активен</string>
+    <string name="subs_sets_more_cd">Действия с набором</string>
+    <string name="subs_sets_new">Новый набор</string>
+    <string name="subs_sets_new_title">Новый набор</string>
+    <string name="subs_sets_edit_title">Изменить набор</string>
+    <string name="subs_sets_name">Название</string>
+    <string name="subs_sets_name_blank">Введите название набора</string>
+    <string name="subs_sets_name_taken">Набор с таким названием уже есть</string>
+    <string name="subs_sets_members">Подписки в наборе</string>
+    <string name="subs_sets_no_subscriptions">Подписок пока нет — добавьте их на вкладке «Подписки»</string>
+    <string name="subs_sets_delete_title">Удалить набор?</string>
+    <string name="subs_sets_delete_text">Набор «%1$s» будет удалён, подписки останутся. Если он активен, автовыбор перейдёт на все подписки.</string>
+    <string name="subs_sets_deleted">Набор удалён</string>
+    <string name="subs_sets_priority">Приоритет</string>
+    <string name="subs_sets_priority_title">Приоритет подписок</string>
+    <string name="subs_sets_save_failed">Не удалось сохранить набор</string>
+    <plurals name="subs_sets_subscriptions" tools:ignore="UnusedQuantity">
+        <item quantity="one">%d подписка</item>
+        <item quantity="few">%d подписки</item>
+        <item quantity="many">%d подписок</item>
+        <item quantity="other">%d подписки</item>
+    </plurals>
+    <plurals name="subs_sets_servers_partial" tools:ignore="UnusedQuantity">
+        <item quantity="one">%1$d из %2$d сервера</item>
+        <item quantity="few">%1$d из %2$d серверов</item>
+        <item quantity="many">%1$d из %2$d серверов</item>
+        <item quantity="other">%1$d из %2$d сервера</item>
+    </plurals>
+
+    <!-- Editor -->
+    <string name="subs_editor_info">Сведения</string>
+    <string name="subs_editor_traffic">Трафик</string>
+    <string name="subs_editor_expiry">Срок</string>
+    <string name="subs_editor_expiry_value">до %1$s · %2$s</string>
+    <string name="subs_editor_last_update">Обновлено</string>
+    <string name="subs_editor_never">ещё не обновлялась</string>
+    <string name="subs_editor_last_error">Ошибка</string>
+    <string name="subs_editor_error_value">%1$s (%2$s)</string>
+    <string name="subs_editor_support">Поддержка</string>
+    <string name="subs_editor_web_page">Сайт провайдера</string>
+    <string name="subs_editor_copy_link">Скопировать ссылку</string>
+    <string name="subs_editor_show_qr">Показать QR</string>
+    <string name="subs_editor_no_link">У подписки нет ссылки</string>
+    <string name="subs_editor_link_copied">Ссылка скопирована. Она даёт доступ к подписке — не делитесь ей с посторонними</string>
+    <string name="subs_editor_share_warning">Кто отсканирует этот код, получит доступ к подписке и её трафику. Показывайте только своим устройствам.</string>
+    <string name="subs_editor_qr_title">Ссылка на подписку</string>
+    <string name="subs_editor_qr_cd">QR-код ссылки на подписку</string>
+    <string name="subs_editor_qr_failed">Ссылка слишком длинная для QR-кода</string>
+    <string name="subs_editor_name">Название</string>
+    <string name="subs_editor_name_none">Без названия</string>
+    <string name="subs_editor_name_clear">Вернуть название провайдера</string>
+    <string name="subs_editor_local">Серверы списка</string>
+    <string name="subs_editor_local_hint">Ссылки на серверы, по одной в строке; сохранение заменит список</string>
+    <string name="subs_editor_local_empty">Список пуст</string>
+    <string name="subs_editor_local_no_nodes">В тексте не найдено ни одного сервера, список не изменён</string>
+    <string name="subs_editor_urls">Адреса</string>
+    <string name="subs_editor_urls_hint">Первый — основной, остальные — зеркала: пробуются по порядку, если основной недоступен</string>
+    <string name="subs_editor_url_primary">Основной</string>
+    <string name="subs_editor_url_mirror">Зеркало %1$d</string>
+    <string name="subs_editor_url_cleartext">Без шифрования (http): ссылка и токен передаются открытым текстом</string>
+    <string name="subs_editor_url_reveal">Показать адрес</string>
+    <string name="subs_editor_url_hide">Скрыть адрес</string>
+    <string name="subs_editor_url_more">Действия с адресом</string>
+    <string name="subs_editor_url_make_primary">Сделать основным</string>
+    <string name="subs_editor_url_new">Адрес подписки</string>
+    <string name="subs_editor_mirror_new">Новое зеркало</string>
+    <string name="subs_editor_add_url">Добавить</string>
+    <string name="subs_editor_url_invalid">Это не http(s)-адрес</string>
+    <string name="subs_editor_url_in_list">Этот адрес уже в списке</string>
+    <string name="subs_editor_no_urls">Нужен хотя бы один адрес</string>
+    <string name="subs_editor_url_duplicate">Этот основной адрес уже у другой подписки</string>
+    <plurals name="subs_editor_provider_mirrors" tools:ignore="UnusedQuantity">
+        <item quantity="one">Провайдер указал ещё %d зеркало, оно пробуется после ваших</item>
+        <item quantity="few">Провайдер указал ещё %d зеркала, они пробуются после ваших</item>
+        <item quantity="many">Провайдер указал ещё %d зеркал, они пробуются после ваших</item>
+        <item quantity="other">Провайдер указал ещё %d зеркала, они пробуются после ваших</item>
+    </plurals>
+    <string name="subs_editor_ua_default">По умолчанию (общий)</string>
+    <string name="subs_editor_ua_custom">Свой…</string>
+    <string name="subs_editor_ua_custom_field">Свой User-Agent</string>
+    <string name="subs_editor_ua_sent">Отправляется: %1$s</string>
+    <string name="subs_editor_interval">Автообновление</string>
+    <string name="subs_editor_interval_provider">По заголовку провайдера (%1$d ч)</string>
+    <string name="subs_editor_interval_provider_default">По заголовку провайдера (сейчас %1$d ч)</string>
+    <string name="subs_editor_interval_hours">%1$d ч</string>
+    <string name="subs_editor_interval_manual">Вручную</string>
+    <string name="subs_editor_sets">Наборы</string>
+    <string name="subs_editor_sets_none">Своих наборов пока нет — их можно создать на вкладке «Наборы»</string>
+    <string name="subs_editor_servers_enabled">Включено %1$d из %2$d</string>
+    <string name="subs_editor_servers_hint">Выключенные серверы не участвуют в автовыборе; переключатель применяется сразу</string>
+    <string name="subs_editor_saved">Сохранено</string>
+    <string name="subs_editor_saved_with">Сохранено. %1$s</string>
+    <string name="subs_editor_save_failed">Не удалось сохранить</string>
+    <string name="subs_editor_discard_title">Выйти без сохранения?</string>
+    <string name="subs_editor_discard_text">Изменения в подписке будут потеряны.</string>
+    <string name="subs_editor_discard">Не сохранять</string>
+    <string name="subs_editor_keep_editing">Продолжить</string>
+    <string name="subs_ago_now">только что</string>
+    <plurals name="subs_ago_minutes" tools:ignore="UnusedQuantity">
+        <item quantity="one">%d минуту назад</item>
+        <item quantity="few">%d минуты назад</item>
+        <item quantity="many">%d минут назад</item>
+        <item quantity="other">%d минуты назад</item>
+    </plurals>
+    <plurals name="subs_ago_hours" tools:ignore="UnusedQuantity">
+        <item quantity="one">%d час назад</item>
+        <item quantity="few">%d часа назад</item>
+        <item quantity="many">%d часов назад</item>
+        <item quantity="other">%d часа назад</item>
+    </plurals>
+    <plurals name="subs_ago_days" tools:ignore="UnusedQuantity">
+        <item quantity="one">%d день назад</item>
+        <item quantity="few">%d дня назад</item>
+        <item quantity="many">%d дней назад</item>
+        <item quantity="other">%d дня назад</item>
+    </plurals>
+</resources>

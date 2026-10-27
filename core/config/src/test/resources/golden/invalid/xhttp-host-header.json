@@ -1,0 +1,55 @@
+{
+  "log": {
+    "level": "error"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "local"
+      }
+    ]
+  },
+  "outbounds": [
+    {
+      "type": "vless",
+      "tag": "n-58098976f926abcb",
+      "server": "xh.example.com",
+      "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-00000000c0de",
+      "tls": {
+        "enabled": true,
+        "server_name": "xh.example.com",
+        "alpn": [
+          "h2",
+          "http/1.1"
+        ],
+        "utls": {
+          "enabled": true,
+          "fingerprint": "random"
+        }
+      },
+      "transport": {
+        "type": "xhttp",
+        "mode": "stream-one",
+        "path": "/xh",
+        "headers": {
+          "Host": "cdn.example.com"
+        },
+        "x_padding_bytes": "100-1000",
+        "host": "cdn.example.com"
+      },
+      "domain_resolver": {
+        "server": "local",
+        "strategy": "prefer_ipv4"
+      }
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local",
+      "strategy": "prefer_ipv4"
+    }
+  }
+}

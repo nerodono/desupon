@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Desupon" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/app_window_background</item>
+    </style>
+
+    <color name="app_window_background">#111411</color>
+</resources>

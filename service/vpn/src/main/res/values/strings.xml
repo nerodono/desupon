@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="svc_title" translatable="false">Desupon</string>
+    <string name="svc_session_label" translatable="false">Desupon</string>
+    <string name="svc_tile_label" translatable="false">Desupon</string>
+    <string name="svc_channel_name">Состояние</string>
+    <string name="svc_action_disconnect">Отключить</string>
+    <string name="svc_state_idle">Отключено</string>
+    <string name="svc_state_connecting">Подключение…</string>
+    <string name="svc_state_connected">Подключено</string>
+    <string name="svc_state_switching">Переключение…</string>
+    <string name="svc_state_degraded">Восстановление связи…</string>
+    <string name="svc_state_unstable">Сеть нестабильна</string>
+    <string name="svc_state_failed">Не удалось подключиться</string>
+    <string name="svc_state_retrying">Не получилось. Пробую ещё раз…</string>
+    <string name="svc_rtt">%1$d мс</string>
+    <string name="svc_down">↓ %1$s</string>
+    <string name="svc_up">↑ %1$s</string>
+    <string name="svc_rate">%1$s %2$s/с</string>
+    <string name="svc_amount">%1$s %2$s</string>
+    <string name="svc_unit_b">Б</string>
+    <string name="svc_unit_kb">КБ</string>
+    <string name="svc_unit_mb">МБ</string>
+    <string name="svc_unit_gb">ГБ</string>
+    <string name="svc_unit_tb">ТБ</string>
+    <string name="svc_session">За сессию: ↓ %1$s · ↑ %2$s</string>
+    <string name="svc_server">Сервер: %1$s</string>
+    <string name="svc_subscription_untitled">Подписка %1$d</string>
+</resources>

@@ -1,0 +1,142 @@
+diff --git a/hysteria2/gecko.go b/hysteria2/gecko.go
+index 7578b39..06dec5e 100644
+--- a/hysteria2/gecko.go
++++ b/hysteria2/gecko.go
+@@ -33,6 +33,7 @@ type GeckoPacketConn struct {
+ 	msgIDCounter  atomic.Uint32
+ 
+ 	readAccess       sync.Mutex
++	readBuffer       []byte
+ 	reassemblyAccess sync.Mutex
+ 	reassembly       map[geckoReassemblyKey]*geckoReassemblyEntry
+ 	perSource        map[string]int
+@@ -57,6 +58,7 @@ func NewGeckoConn(conn net.PacketConn, password []byte, minPacketSize, maxPacket
+ 		PacketConn:    NewSalamanderConn(conn, password),
+ 		minPacketSize: minPacketSize,
+ 		maxPacketSize: maxPacketSize,
++		readBuffer:    make([]byte, geckoMaxOnWireSize),
+ 		reassembly:    make(map[geckoReassemblyKey]*geckoReassemblyEntry),
+ 		perSource:     make(map[string]int),
+ 		lastSweep:     time.Now(),
+@@ -125,24 +127,26 @@ func (g *GeckoPacketConn) randomPadLen(chunkLen int) uint16 {
+ func (g *GeckoPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
+ 	g.readAccess.Lock()
+ 	defer g.readAccess.Unlock()
++	// Frames reach geckoMaxOnWireSize, more than the QUIC packet buffer p; reading into p would truncate them.
++	buffer := g.readBuffer
+ 	for {
+-		n, addr, err := g.PacketConn.ReadFrom(p)
++		n, addr, err := g.PacketConn.ReadFrom(buffer)
+ 		if err != nil {
+-			return n, addr, err
++			return 0, addr, err
+ 		}
+ 		if n == 0 {
+ 			continue
+ 		}
+-		if p[0]&geckoFragmentFlag == 0 {
+-			return n, addr, nil
++		if buffer[0]&geckoFragmentFlag == 0 {
++			return copy(p, buffer[:n]), addr, nil
+ 		}
+ 		if n < geckoHeaderLen {
+ 			continue
+ 		}
+-		msgID := p[1]
+-		chunkIdx := p[2] >> 4
+-		totalChunks := p[2] & 0x0f
+-		padLen := binary.BigEndian.Uint16(p[3:5])
++		msgID := buffer[1]
++		chunkIdx := buffer[2] >> 4
++		totalChunks := buffer[2] & 0x0f
++		padLen := binary.BigEndian.Uint16(buffer[3:5])
+ 		if totalChunks < geckoMinChunks || totalChunks > geckoMaxChunks {
+ 			continue
+ 		}
+@@ -153,7 +157,7 @@ func (g *GeckoPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
+ 		if payloadStart > n {
+ 			continue
+ 		}
+-		out, ready := g.acceptChunk(addr, msgID, chunkIdx, totalChunks, p[payloadStart:n])
++		out, ready := g.acceptChunk(addr, msgID, chunkIdx, totalChunks, buffer[payloadStart:n])
+ 		if !ready {
+ 			continue
+ 		}
+@@ -194,7 +198,7 @@ func (g *GeckoPacketConn) acceptChunk(addr net.Addr, msgID, chunkIdx, totalChunk
+ 	if int(chunkIdx) >= len(entry.chunks) || entry.chunks[chunkIdx] != nil {
+ 		return nil, false
+ 	}
+-	// payload aliases the caller buffer; the next inner read will overwrite it.
++	// payload aliases the read buffer; the next inner read will overwrite it.
+ 	payloadCopy := make([]byte, len(payload))
+ 	copy(payloadCopy, payload)
+ 	entry.chunks[chunkIdx] = payloadCopy
+@@ -255,6 +259,7 @@ type GeckoConn struct {
+ 	msgIDCounter  atomic.Uint32
+ 
+ 	readAccess       sync.Mutex
++	readBuffer       []byte
+ 	reassemblyAccess sync.Mutex
+ 	reassembly       map[uint8]*geckoReassemblyEntry
+ 
+@@ -266,6 +271,7 @@ func NewGeckoClientConn(conn net.Conn, password []byte, minPacketSize, maxPacket
+ 		Conn:          NewSalamanderClientConn(conn, password),
+ 		minPacketSize: minPacketSize,
+ 		maxPacketSize: maxPacketSize,
++		readBuffer:    make([]byte, geckoMaxOnWireSize),
+ 		reassembly:    make(map[uint8]*geckoReassemblyEntry),
+ 		lastSweep:     time.Now(),
+ 	}
+@@ -332,24 +338,26 @@ func (g *GeckoConn) randomPadLen(chunkLen int) uint16 {
+ func (g *GeckoConn) Read(p []byte) (int, error) {
+ 	g.readAccess.Lock()
+ 	defer g.readAccess.Unlock()
++	// Frames reach geckoMaxOnWireSize, more than the QUIC packet buffer p; reading into p would truncate them.
++	buffer := g.readBuffer
+ 	for {
+-		n, err := g.Conn.Read(p)
++		n, err := g.Conn.Read(buffer)
+ 		if err != nil {
+-			return n, err
++			return 0, err
+ 		}
+ 		if n == 0 {
+ 			continue
+ 		}
+-		if p[0]&geckoFragmentFlag == 0 {
+-			return n, nil
++		if buffer[0]&geckoFragmentFlag == 0 {
++			return copy(p, buffer[:n]), nil
+ 		}
+ 		if n < geckoHeaderLen {
+ 			continue
+ 		}
+-		msgID := p[1]
+-		chunkIdx := p[2] >> 4
+-		totalChunks := p[2] & 0x0f
+-		padLen := binary.BigEndian.Uint16(p[3:5])
++		msgID := buffer[1]
++		chunkIdx := buffer[2] >> 4
++		totalChunks := buffer[2] & 0x0f
++		padLen := binary.BigEndian.Uint16(buffer[3:5])
+ 		if totalChunks < geckoMinChunks || totalChunks > geckoMaxChunks {
+ 			continue
+ 		}
+@@ -360,7 +368,7 @@ func (g *GeckoConn) Read(p []byte) (int, error) {
+ 		if payloadStart > n {
+ 			continue
+ 		}
+-		out, ready := g.acceptChunk(msgID, chunkIdx, totalChunks, p[payloadStart:n])
++		out, ready := g.acceptChunk(msgID, chunkIdx, totalChunks, buffer[payloadStart:n])
+ 		if !ready {
+ 			continue
+ 		}
+@@ -394,7 +402,7 @@ func (g *GeckoConn) acceptChunk(msgID, chunkIdx, totalChunks uint8, payload []by
+ 	if int(chunkIdx) >= len(entry.chunks) || entry.chunks[chunkIdx] != nil {
+ 		return nil, false
+ 	}
+-	// payload aliases the caller buffer; the next inner read will overwrite it.
++	// payload aliases the read buffer; the next inner read will overwrite it.
+ 	payloadCopy := make([]byte, len(payload))
+ 	copy(payloadCopy, payload)
+ 	entry.chunks[chunkIdx] = payloadCopy

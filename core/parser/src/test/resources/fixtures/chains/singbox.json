@@ -1,0 +1,43 @@
+{
+  "outbounds": [
+    {"type": "selector", "tag": "select", "outbounds": ["🇩🇪 de-exit", "🇫🇮 fi-direct"]},
+    {"type": "direct", "tag": "direct"},
+    {
+      "type": "vless", "tag": "🇩🇪 de-exit", "server": "de-exit.example.com", "server_port": 443,
+      "uuid": "00000000-0000-4000-8000-0000000000a1", "flow": "xtls-rprx-vision", "detour": "ru-entry",
+      "tls": {"enabled": true, "server_name": "www.example.org", "utls": {"enabled": true, "fingerprint": "firefox"},
+        "reality": {"enabled": true, "public_key": "c3ludGhldGljLXhyYXktcmVhbGl0eS1rZXktMDAwMDE", "short_id": "a1"}}
+    },
+    {
+      "type": "trojan", "tag": "ru-entry", "server": "ru-entry.example.com", "server_port": 443, "password": "synthetic-sb-entry",
+      "tls": {"enabled": true, "server_name": "ru-entry.example.com"}
+    },
+    {
+      "type": "shadowsocks", "tag": "🇫🇮 fi-direct", "server": "fi.example.com", "server_port": 8388,
+      "method": "aes-128-gcm", "password": "synthetic-sb-fi", "detour": "direct"
+    },
+    {
+      "type": "trojan", "tag": "🇸🇪 se-via-wg", "server": "se.example.com", "server_port": 443, "password": "synthetic-sb-se",
+      "tls": {"enabled": true, "server_name": "se.example.com"}, "detour": "wg-entry"
+    },
+    {
+      "type": "trojan", "tag": "🇳🇱 nl-via-group", "server": "nl.example.com", "server_port": 443, "password": "synthetic-sb-nl",
+      "tls": {"enabled": true}, "detour": "select"
+    },
+    {"type": "trojan", "tag": "loop-a", "server": "a.example.com", "server_port": 443, "password": "la", "tls": {"enabled": true}, "detour": "loop-b"},
+    {"type": "trojan", "tag": "loop-b", "server": "b.example.com", "server_port": 443, "password": "lb", "tls": {"enabled": true}, "detour": "loop-a"}
+  ],
+  "endpoints": [
+    {
+      "type": "wireguard", "tag": "wg-entry", "mtu": 1280, "address": ["10.77.0.2/32"],
+      "private_key": "c3ludGhldGljLWNoYWluLXdnLXByaXZhdGUta2V5MDE=",
+      "peers": [{"address": "203.0.113.77", "port": 51820, "public_key": "c3ludGhldGljLWNoYWluLXdnLXB1YmxpYy1rZXktMDE=", "allowed_ips": ["0.0.0.0/0"]}]
+    },
+    {
+      "type": "wireguard", "tag": "🇯🇵 wg-via-ru", "address": ["10.78.0.2/32"], "detour": "ru-entry",
+      "private_key": "c3ludGhldGljLWNoYWluLXdnLXByaXZhdGUta2V5MDE=",
+      "peers": [{"address": "jp-wg.example.com", "port": 51820, "public_key": "c3ludGhldGljLWNoYWluLXdnLXB1YmxpYy1rZXktMDE=", "allowed_ips": ["0.0.0.0/0"]}]
+    }
+  ],
+  "route": {"final": "select"}
+}

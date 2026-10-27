@@ -1,0 +1,27 @@
+{
+  "containers": [
+    {
+      "container": "amnezia-openvpn",
+      "openvpn": {"last_config": "{\"config\":\"client\\ndev tun\\n\"}"}
+    },
+    {
+      "container": "amnezia-awg",
+      "awg": {
+        "last_config": "{\"config\":\"[Interface]\\nAddress = 10.8.1.2/32\\nDNS = $PRIMARY_DNS, $SECONDARY_DNS\\nPrivateKey = c3ludGhldGljLWFtbmV6aWEtcHJpdmF0ZS1rZXkwMDE=\\nJc = 4\\nJmin = 40\\nJmax = 70\\nS1 = 116\\nS2 = 61\\nH1 = 1239197098\\nH2 = 1929999858\\nH3 = 1842910958\\nH4 = 1234567891\\n\\n[Peer]\\nPublicKey = c3ludGhldGljLWFtbmV6aWEtcHVibGljLWtleTAwMDE=\\nPresharedKey = c3ludGhldGljLWFtbmV6aWEtcHNrLWtleS0wMDAwMDE=\\nAllowedIPs = 0.0.0.0/0, ::/0\\nEndpoint = 203.0.113.10:43210\\nPersistentKeepalive = 25\\n\",\"mtu\":\"1280\",\"port\":\"43210\"}",
+        "port": "43210",
+        "transport_proto": "udp"
+      }
+    },
+    {
+      "container": "amnezia-wireguard",
+      "wireguard": {
+        "last_config": "{\"config\":\"[Interface]\\nAddress = 10.8.2.2/32\\nPrivateKey = c3ludGhldGljLWFtbmV6aWEtd2ctcHJpdmF0ZS1rMDE=\\n\\n[Peer]\\nPublicKey = c3ludGhldGljLWFtbmV6aWEtd2ctcHVibGljLWswMDE=\\nAllowedIPs = 0.0.0.0/0\\nEndpoint = $SERVER_IP_ADDRESS:$SERVER_PORT\\n\",\"port\":\"51820\"}"
+      }
+    }
+  ],
+  "defaultContainer": "amnezia-awg",
+  "description": "🇩🇪 Synthetic Amnezia",
+  "dns1": "1.1.1.1",
+  "dns2": "1.0.0.1",
+  "hostName": "203.0.113.10"
+}

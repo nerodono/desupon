@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand SuiDream; kept here so the service does not depend on the UI theme. -->
+    <color name="svc_accent">#FF57DF92</color>
+</resources>
