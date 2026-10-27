@@ -130,6 +130,8 @@ class InstalledSplitTest {
 
         override suspend fun resetNetwork() {}
 
+        override suspend fun resetOutbound(tag: String) {}
+
         override suspend fun stop() {}
     }
 }

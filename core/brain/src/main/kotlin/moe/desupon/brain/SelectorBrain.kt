@@ -310,8 +310,10 @@ class SelectorBrain(
 
         /** When the core last started over on fresh connections: a reload or a network reset. */
         private var freshSinceMs: Long? = null
+
+        /** When each outbound tag was last reset before its node was passed over. */
+        private val outboundResetAtMs = HashMap<String, Long>()
         private var graceUntilMs: Long? = null
-        private var graceResetSpent = false
 
         /** The current network was not seen within [BrainConfig.throughputAfterMs] before this session entered it. */
         private var unseen = false
@@ -571,7 +573,8 @@ class SelectorBrain(
 
         /**
          * Server-side QUIC idle timeouts and NAT mappings ran on while the device slept: the core starts over, then the current
-         * node is checked at once, as on [resume]. Failures of the grace window that follows count for nothing durable.
+         * node is checked at once, as on [resume]. Failures of probes through the core in the grace window that follows count
+         * for nothing durable.
          */
         private suspend fun onWake() {
             failures = 0
@@ -579,7 +582,6 @@ class SelectorBrain(
             // Unstable keeps its exit check.
             if (_state.value !is ConnState.Unstable) recheckAt = null
             graceUntilMs = clock.elapsedMs() + config.wakeGraceMs
-            graceResetSpent = false
             resetNetwork()
             if (offline) return
             val now = clock.elapsedMs()
@@ -590,20 +592,22 @@ class SelectorBrain(
 
         private fun inGrace(): Boolean = graceUntilMs.let { it != null && clock.elapsedMs() < it }
 
-        /** Once per grace window, else once per [BrainConfig.resetCooldownMs] since the core last started over. */
-        private fun resetDue(): Boolean {
-            if (inGrace()) {
-                if (graceResetSpent) return false
-                graceResetSpent = true
-                return true
-            }
-            return freshSinceMs.let { it == null || clock.elapsedMs() - it >= config.resetCooldownMs }
+        /** Once per [BrainConfig.resetCooldownMs] since the core or the outbound [tag] last started over. */
+        private fun resetDue(tag: String): Boolean {
+            val now = clock.elapsedMs()
+            return listOfNotNull(freshSinceMs, outboundResetAtMs[tag]).all { now - it >= config.resetCooldownMs }
         }
 
         /** A refused reset leaves the session as it is. */
         private suspend fun resetNetwork() {
             freshSinceMs = clock.elapsedMs()
             guard(Unit) { libbox.resetNetwork() }
+        }
+
+        /** A refused reset leaves the session as it is. */
+        private suspend fun resetOutbound(tag: String) {
+            outboundResetAtMs[tag] = clock.elapsedMs()
+            guard(Unit) { libbox.resetOutbound(tag) }
         }
 
         private suspend fun fireTimers() {
@@ -662,8 +666,19 @@ class SelectorBrain(
 
         private suspend fun check() {
             val cur = current ?: return
-            val passed = live(cur.node).passed()
+            val result = probeOne(cur.node, net)
+            val passed = result.passed()
             val st = _state.value
+            val switching = !passed && network.value != null && failures + 1 >= config.failuresToSwitch &&
+                !(st is ConnState.Unstable && flapLimited())
+            // State that died unnoticed must not get the node passed over: its client starts over and it is probed again,
+            // uncounted; connections over it would break with the switch anyway.
+            if (switching && resetDue(cur.tag)) {
+                resetOutbound(cur.tag)
+                recheckAt = clock.elapsedMs() + config.confirmDelayMs
+                return
+            }
+            record(mapOf(cur.node.id to result), live = true)
             if (passed) {
                 failures = 0
                 if (st !is ConnState.Unstable) recheckAt = null
@@ -680,8 +695,6 @@ class SelectorBrain(
             }
             // Lost with the network itself; the offline event that follows pauses checks.
             if (network.value == null) return
-            // The confirmation then runs on fresh connections, so state that died unnoticed never gets the node blamed.
-            if (failures == 0 && resetDue()) resetNetwork()
             failures++
             if (st is ConnState.Unstable && flapLimited()) return
             if (failures >= config.failuresToSwitch) failover() else recheckAt = clock.elapsedMs() + config.confirmDelayMs
@@ -911,11 +924,12 @@ class SelectorBrain(
                 return
             }
             val order = keepFirstInStep(candidates(), cur?.node?.id)
-            var pick = firstPassing(order)
-            // The node this selection lands on gets fresh connections before it is passed over, as in [check].
-            if (order.isNotEmpty() && pick != order.first() && resetDue()) {
-                resetNetwork()
-                pick = firstPassing(order)
+            // The node this selection lands on gets its client reset before it is passed over, as in [check].
+            val first = order.firstOrNull()?.takeIf { resetDue(it.tag) }
+            var pick = firstPassing(order, unrecorded = first?.node?.id)
+            if (first != null && pick != first) {
+                resetOutbound(first.tag)
+                if (live(first.node).passed()) pick = first
             }
             if (pick == null) {
                 val fallback = order.firstOrNull() ?: cur ?: throw unavailable()
@@ -1052,7 +1066,7 @@ class SelectorBrain(
             dns: DnsSettings,
             timeouts: Map<String, Int>,
         ): Map<NodeId, ProbeResult> {
-            val (inBox, offBox) = nodes.partition { (it.isEndpoint || it.protocol in WG_FAMILY) && it.id.tag in running }
+            val (inBox, offBox) = nodes.partition { it.runsIn(running) }
             return probeOffBox(offBox, on, dns, timeouts) + liveResults(inBox, on)
         }
 
@@ -1075,9 +1089,12 @@ class SelectorBrain(
         }
 
         private suspend fun live(node: Node): ProbeResult =
-            probeOne(node, net).also { record(mapOf(node.id to it)) }
+            probeOne(node, net).also { record(mapOf(node.id to it), live = true) }
 
-        private suspend fun liveAll(nodes: List<Node>): Map<NodeId, ProbeResult> = liveResults(nodes, net).also { record(it) }
+        private suspend fun liveAll(nodes: List<Node>): Map<NodeId, ProbeResult> = liveResults(nodes, net).also { record(it, live = true) }
+
+        /** A sweep probes this node through the running core, as [probeNodes] splits them. */
+        private fun runsInCore(id: NodeId): Boolean = poolById[id]?.runsIn(loaded?.tags.orEmpty()) == true
 
         private suspend fun liveResults(nodes: List<Node>, on: BrainEvent.NetworkChanged): Map<NodeId, ProbeResult> {
             if (nodes.isEmpty()) return emptyMap()
@@ -1140,17 +1157,22 @@ class SelectorBrain(
             candidates().firstOrNull { it.node.id == better }?.let { switchTo(it) }
         }
 
-        private suspend fun firstPassing(order: List<Cand>): Cand? {
+        /** A failure of [unrecorded] stays out of the stats, for a node about to be reset and probed again. */
+        private suspend fun firstPassing(order: List<Cand>, unrecorded: NodeId? = null): Cand? {
             for (chunk in order.chunked(config.liveConcurrency.coerceAtLeast(1))) {
-                val results = liveAll(chunk.map { it.node })
+                val results = liveResults(chunk.map { it.node }, net)
+                record(results.filter { (id, r) -> id != unrecorded || r.passed() }, live = true)
                 chunk.firstOrNull { results[it.node.id].passed() }?.let { return it }
             }
             return null
         }
 
-        /** Inside the wake grace window only passes count: a failure there may be state that died in sleep. */
-        private suspend fun record(probed: Map<NodeId, ProbeResult>) {
-            val results = if (inGrace()) probed.filterValues { it.passed() } else probed
+        /**
+         * Inside the wake grace window, failures of probes through the core, [live] or of nodes running in it, count for nothing:
+         * its clients are still coming back from the reset and from sleep.
+         */
+        private suspend fun record(probed: Map<NodeId, ProbeResult>, live: Boolean = false) {
+            val results = if (inGrace()) probed.filter { (id, r) -> r.passed() || !(live || runsInCore(id)) } else probed
             if (results.isEmpty()) return
             val now = clock.nowMs()
             val updated = results.map { (id, r) -> stats[id].next(id, net.key, r, now, config.rttAlpha).also { stats[id] = it } }
@@ -1187,6 +1209,9 @@ class SelectorBrain(
         val WG_FAMILY = setOf(Protocol.WIREGUARD, Protocol.AMNEZIAWG)
 
         fun Node.isWireGuardFamily(): Boolean = isEndpoint || protocol in WG_FAMILY
+
+        /** WireGuard-family nodes loaded in the box are probed through it, the rest in a box of their own. */
+        fun Node.runsIn(running: Set<String>): Boolean = isWireGuardFamily() && id.tag in running
 
         /** Port failures degrade to [fallback]; cancellation still propagates. */
         inline fun <T> guard(fallback: T, block: () -> T): T = try {

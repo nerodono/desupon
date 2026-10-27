@@ -10,7 +10,9 @@ import kotlinx.coroutines.test.runTest
 import moe.desupon.brain.plan.PlannerConfig
 import moe.desupon.brain.port.BrainEvent
 import moe.desupon.brain.port.ConnState
+import moe.desupon.brain.probe.ProbeRequestResult
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import moe.desupon.model.network.NetworkMemory
 import moe.desupon.model.network.NetworkMode
@@ -196,13 +198,14 @@ class SelectorBrainTest {
 
         for (k in 0 until 3) {
             h.kill(nodes[k])
-            advance(48_000)
+            // Past the first minute each switch waits for one more probe after an outbound reset.
+            advance(if (k == 0) 48_000 else 51_000)
             h.assertOn(nodes[k + 1])
         }
         h.kill(nodes[3], nodes[4])
         h.brain.state.test {
             skipItems(1)
-            advance(48_000)
+            advance(51_000)
             val unstable = assertIs<ConnState.Unstable>(awaitItem())
             assertEquals("n5", unstable.best.displayName)
             assertEquals(nodes[4].tag, h.libbox.selected)
@@ -296,7 +299,7 @@ class SelectorBrainTest {
             advance(1_000)
         }
         assertTrue(h.prober.live.size > probesBefore)
-        advance(3_000)
+        advance(6_000)
         h.assertOn(d2)
     }
 
@@ -856,7 +859,7 @@ class SelectorBrainTest {
         runCurrent()
         assertEquals(live + 1, h.prober.live.size, "the current node is checked as soon as the network is back")
         h.assertOn(d1)
-        advance(3_000)
+        advance(6_000)
         h.assertOn(d2)
         assertEquals(pools, h.prober.poolRequests.size)
     }
@@ -894,7 +897,7 @@ class SelectorBrainTest {
     }
 
     @Test
-    fun `a failure right after wake resets the core again and leaves no mark once confirmed good`() = runTest {
+    fun `a failure right after wake is confirmed without a second reset and leaves no mark once confirmed good`() = runTest {
         val d1 = Nodes.ss("d1")
         val d2 = Nodes.ss("d2")
         val h = Harness(this, listOf(d1, d2))
@@ -907,11 +910,12 @@ class SelectorBrainTest {
         h.prober.liveDead += d1.tag
         h.brain.onWake()
         runCurrent()
-        assertEquals(2, h.libbox.resets)
         h.prober.liveDead.clear()
         advance(3_000)
 
         h.assertOn(d1)
+        assertEquals(1, h.libbox.resets)
+        assertEquals(emptyList(), h.libbox.outboundResets)
         val after = h.stats.map.getValue(WIFI to d1.id)
         assertEquals(before.fail, after.fail)
         assertEquals(0, after.failStreak)
@@ -935,6 +939,7 @@ class SelectorBrainTest {
         advance(3_000)
 
         h.assertOn(d2)
+        assertEquals(emptyList(), h.libbox.outboundResets, "the wake reset counts as the node's")
         assertEquals(d1.id, h.memory.map.getValue(WIFI).lastGood)
         assertEquals(failsBefore, h.stats.map.getValue(WIFI to d1.id).fail)
 
@@ -944,7 +949,30 @@ class SelectorBrainTest {
     }
 
     @Test
-    fun `a first failure resets the core before the confirmation probe, at most once a minute`() = runTest {
+    fun `the wake grace window still records what a set probe finds off the core`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val d2 = Nodes.ss("d2")
+        val h = Harness(this, listOf(d1, d2))
+        h.alive(d1, d2)
+        h.rtt(d1 to 10, d2 to 20)
+        h.connectOn(WIFI)
+        advance(600_000)
+        val before = h.stats.map.getValue(WIFI to d2.id)
+
+        h.kill(d2)
+        h.brain.onWake()
+        runCurrent()
+        val probed = async { h.brain.probeSetPool() }
+        runCurrent()
+
+        assertEquals(ProbeRequestResult.Done(2), probed.await())
+        val after = h.stats.map.getValue(WIFI to d2.id)
+        assertEquals(before.fail + 1, after.fail)
+        assertEquals(1, after.failStreak)
+    }
+
+    @Test
+    fun `a failure the confirmation clears resets nothing`() = runTest {
         val d1 = Nodes.ss("d1")
         val d2 = Nodes.ss("d2")
         val h = Harness(this, listOf(d1, d2))
@@ -953,19 +981,43 @@ class SelectorBrainTest {
         h.connectOn(WIFI)
         h.libbox.traffic(true)
         advance(60_000)
+        h.prober.liveDead += d1.tag
+
+        advance(30_000)
+        h.prober.liveDead.clear()
+        advance(3_000)
+
+        h.assertOn(d1)
+        assertEquals(0, h.libbox.resets)
+        assertEquals(emptyList(), h.libbox.outboundResets)
+    }
+
+    @Test
+    fun `a failure that would switch away resets the node's outbound and probes it again uncounted, at most once a minute`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val d2 = Nodes.ss("d2")
+        val h = Harness(this, listOf(d1, d2))
+        h.alive(d1, d2)
+        h.rtt(d1 to 10, d2 to 20)
+        h.connectOn(WIFI)
+        h.libbox.traffic(true)
+        advance(60_000)
+        val failsBefore = h.stats.map.getValue(WIFI to d1.id).fail
         h.kill(d1)
         h.journal.entries.clear()
 
-        advance(30_000)
-        assertEquals(listOf("probeLive:${d1.tag}", "reset"), h.journal.entries)
+        advance(33_000)
+        assertEquals(listOf("probeLive:${d1.tag}", "probeLive:${d1.tag}", "reset:${d1.tag}"), h.journal.entries)
         h.alive(d1)
         advance(3_000)
         h.assertOn(d1)
+        assertEquals(failsBefore + 1, h.stats.map.getValue(WIFI to d1.id).fail, "the failure before the reset is not recorded")
 
         h.kill(d1)
         advance(45_000)
         h.assertOn(d2)
-        assertEquals(1, h.libbox.resets)
+        assertEquals(listOf(d1.tag), h.libbox.outboundResets)
+        assertEquals(0, h.libbox.resets)
     }
 
     @Test
@@ -981,6 +1033,7 @@ class SelectorBrainTest {
         advance(48_000)
         h.assertOn(d2)
         assertEquals(0, h.libbox.resets)
+        assertEquals(emptyList(), h.libbox.outboundResets)
     }
 
     @Test

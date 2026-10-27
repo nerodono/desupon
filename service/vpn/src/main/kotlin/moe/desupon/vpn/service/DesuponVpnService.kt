@@ -337,7 +337,7 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
         screenReceiver = null
     }
 
-    /** Spans retries like the feed, so a wake also cuts a retry wait short. */
+    /** Spans retries like the feed, whose screen state it reads, so a wake also cuts a retry wait short. */
     private fun startWakeWatch() {
         if (wakeWatch != null) return
         val power = getSystemService(PowerManager::class.java)
@@ -358,7 +358,8 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
             }
             ContextCompat.registerReceiver(this, it, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         }
-        wakeWatch = scope.launch { WakeDetector().wakes(merge(wakeChecks, observer.unblocked)).collect(wakes::emit) }
+        val detector = WakeDetector(interactive = { screenOn.value })
+        wakeWatch = scope.launch { detector.wakes(merge(wakeChecks, observer.unblocked)).collect(wakes::emit) }
     }
 
     private fun stopWakeWatch() {

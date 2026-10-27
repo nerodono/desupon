@@ -4,6 +4,7 @@ import android.os.SystemClock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 
 /**
@@ -11,20 +12,32 @@ import kotlinx.coroutines.flow.merge
  * run on while the CPU is suspended, but timers here and in the core stand still.
  *
  * @param suspendedMs time spent suspended since boot; elapsedRealtime counts it, uptimeMillis does not.
+ * @param interactive whether the screen is on.
  */
 class WakeDetector(
     private val suspendedMs: () -> Long = { SystemClock.elapsedRealtime() - SystemClock.uptimeMillis() },
+    private val interactive: () -> Boolean = { true },
     private val thresholdMs: Long = THRESHOLD_MS,
     private val tickMs: Long = TICK_MS,
 ) {
-    /** How long the device slept, whenever that exceeds [thresholdMs] between two checks: one every [tickMs] of awake time, and each of [checks]. */
+    /**
+     * How long the device slept since the last check, whenever that reaches [thresholdMs]: on each of [checks], and on a tick
+     * every [tickMs] of awake time while [interactive]. With the screen off the CPU wakes briefly for pushes and alarms, so a
+     * tick there cannot tell one long sleep from many short ones: it only moves past a sleep below [thresholdMs] and leaves
+     * a longer one to the next check.
+     */
     fun wakes(checks: Flow<Unit>): Flow<Long> = flow {
         var mark = suspendedMs()
-        merge(ticks(), checks).collect {
+        merge(ticks().map { true }, checks.map { false }).collect { tick ->
             val now = suspendedMs()
             val slept = now - mark
-            mark = now
-            if (slept >= thresholdMs) emit(slept)
+            when {
+                slept < thresholdMs -> mark = now
+                !tick || interactive() -> {
+                    mark = now
+                    emit(slept)
+                }
+            }
         }
     }
 

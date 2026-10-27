@@ -41,6 +41,10 @@ class LibboxCommandTest {
             calls += "resetNetwork"
         }
 
+        override fun resetOutbound(tag: String) {
+            calls += "resetOutbound:$tag"
+        }
+
         override fun closeService() {
             calls += "closeService"
         }
@@ -91,10 +95,12 @@ class LibboxCommandTest {
         cmd.select("proxy", "n-0000000000000001")
         cmd.closeConnections()
         cmd.resetNetwork()
+        cmd.resetOutbound("n-0000000000000001")
         assertFalse("connected" in core.calls, "control calls waited for the client")
         assertTrue("select:proxy/n-0000000000000001" in core.calls)
         assertTrue("closeConnections" in core.calls)
         assertTrue("resetNetwork" in core.calls)
+        assertTrue("resetOutbound:n-0000000000000001" in core.calls)
         core.connectGate.countDown()
     }
 

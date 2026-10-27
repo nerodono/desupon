@@ -52,14 +52,14 @@ index 0000000..fc06c4f
 +	return time.Now().UnixNano()
 +}
 diff --git a/hysteria2/client.go b/hysteria2/client.go
-index deac835..a109a6c 100644
+index deac835..68f97ac 100644
 --- a/hysteria2/client.go
 +++ b/hysteria2/client.go
 @@ -77,6 +77,8 @@ type Client struct {
  	bbrProfile         congestion_meta2.Profile
  	realmOptions       *realm.Options
  	controlClient      *realm.ControlClient
-+	clock              func() int64
++	clock              func() clockReading
 +	staleAfter         time.Duration
  
  	connAccess sync.Mutex
@@ -68,7 +68,7 @@ index deac835..a109a6c 100644
  		bbrProfile:         bbrProfile,
  		realmOptions:       options.RealmOptions,
  		controlClient:      controlClient,
-+		clock:              coarseBoottime,
++		clock:              coarseClock,
 +		staleAfter:         staleAfterFor(quicConfig),
  	}, nil
  }
@@ -205,10 +205,10 @@ index 1742026..0ad79e1 100644
  	}
 diff --git a/hysteria2/stale.go b/hysteria2/stale.go
 new file mode 100644
-index 0000000..7e7a6d2
+index 0000000..1be9dae
 --- /dev/null
 +++ b/hysteria2/stale.go
-@@ -0,0 +1,142 @@
+@@ -0,0 +1,167 @@
 +package hysteria2
 +
 +import (
@@ -241,21 +241,34 @@ index 0000000..7e7a6d2
 +	return max(idle*2/3, minStaleAfter)
 +}
 +
-+// receiveTracker times the server's silence on a clock that keeps running in device sleep, unlike quic-go's idle timer.
-+type receiveTracker struct {
-+	clock      func() int64
-+	staleAfter time.Duration
-+	last       atomic.Int64
++// minAsleep is the least sleep that makes a silence one quic-go's idle timer cannot see, well above coarseClock's skew;
++// a silence spent awake is a plain outage, which that timer still judges.
++const minAsleep = 2 * time.Second
++
++// clockReading pairs boottime, which runs on in device sleep, with the monotonic clock, which stops there as quic-go's timers do.
++type clockReading struct {
++	boot int64
++	mono int64
 +}
 +
-+func newReceiveTracker(clock func() int64, staleAfter time.Duration) *receiveTracker {
++// receiveTracker times the server's silence on a clock that keeps running in device sleep, unlike quic-go's idle timer.
++type receiveTracker struct {
++	clock      func() clockReading
++	staleAfter time.Duration
++	lastBoot   atomic.Int64
++	lastMono   atomic.Int64
++}
++
++func newReceiveTracker(clock func() clockReading, staleAfter time.Duration) *receiveTracker {
 +	tracker := &receiveTracker{clock: clock, staleAfter: staleAfter}
 +	tracker.touch()
 +	return tracker
 +}
 +
 +func (t *receiveTracker) touch() {
-+	t.last.Store(t.clock())
++	now := t.clock()
++	t.lastBoot.Store(now.boot)
++	t.lastMono.Store(now.mono)
 +}
 +
 +func (t *receiveTracker) count(int64) {
@@ -263,11 +276,18 @@ index 0000000..7e7a6d2
 +}
 +
 +func (t *receiveTracker) staleError() error {
-+	silent := time.Duration(t.clock() - t.last.Load())
++	now := t.clock()
++	// Loaded in the reverse order of touch, so a racing receive can only shorten the silence.
++	lastMono := t.lastMono.Load()
++	silent := time.Duration(now.boot - t.lastBoot.Load())
 +	if silent <= t.staleAfter {
 +		return nil
 +	}
-+	return E.Cause(errStaleConnection, "nothing received for ", silent.Round(time.Second))
++	asleep := silent - time.Duration(now.mono-lastMono)
++	if asleep < minAsleep {
++		return nil
++	}
++	return E.Cause(errStaleConnection, "nothing received for ", silent.Round(time.Second), ", ", asleep.Round(time.Second), " of it asleep")
 +}
 +
 +// receiveConn stamps reads from the server socket; withSyscallConn unwraps it, so on quic-go's fd path the stamp runs as a read counter.
@@ -336,27 +356,32 @@ index 0000000..7e7a6d2
 +	boot int64
 +}
 +
-+var lastClockSample atomic.Pointer[clockSample]
++var (
++	lastClockSample atomic.Pointer[clockSample]
++	monoBase        = time.Now()
++)
 +
-+// coarseBoottime extrapolates the last kernel reading along the vDSO wall clock, which also runs in sleep,
++// coarseClock extrapolates the last boottime reading along the vDSO wall clock, which also runs in sleep,
 +// and re-reads it every second or on a backward step, so clock adjustments skew it by under a second.
-+func coarseBoottime() int64 {
-+	wall := time.Now().UnixNano()
++func coarseClock() clockReading {
++	now := time.Now()
++	wall := now.UnixNano()
++	mono := int64(now.Sub(monoBase))
 +	if sample := lastClockSample.Load(); sample != nil {
 +		if elapsed := wall - sample.wall; elapsed >= 0 && elapsed < int64(clockResample) {
-+			return sample.boot + elapsed
++			return clockReading{boot: sample.boot + elapsed, mono: mono}
 +		}
 +	}
 +	boot := boottime()
 +	lastClockSample.Store(&clockSample{wall: wall, boot: boot})
-+	return boot
++	return clockReading{boot: boot, mono: mono}
 +}
 diff --git a/hysteria2/stale_test.go b/hysteria2/stale_test.go
 new file mode 100644
-index 0000000..e103d01
+index 0000000..c131d2a
 --- /dev/null
 +++ b/hysteria2/stale_test.go
-@@ -0,0 +1,456 @@
+@@ -0,0 +1,522 @@
 +package hysteria2
 +
 +import (
@@ -374,7 +399,6 @@ index 0000000..e103d01
 +	"net/netip"
 +	"os"
 +	"sync"
-+	"sync/atomic"
 +	"testing"
 +	"time"
 +
@@ -405,7 +429,7 @@ index 0000000..e103d01
 +	}
 +}
 +
-+func TestCoarseBoottimeTracksKernel(t *testing.T) {
++func TestCoarseClockTracksKernel(t *testing.T) {
 +	wall := time.Now().UnixNano()
 +	for _, sample := range []*clockSample{
 +		nil,
@@ -415,13 +439,43 @@ index 0000000..e103d01
 +		lastClockSample.Store(sample)
 +		// The first read must resample, the second extrapolates from it.
 +		for range 2 {
-+			before := boottime()
-+			coarse := coarseBoottime()
-+			after := boottime()
-+			if coarse < before-int64(5*time.Millisecond) || coarse > after+int64(5*time.Millisecond) {
-+				t.Fatalf("coarse boottime %d outside kernel reads [%d, %d] after sample %+v", coarse, before, after, sample)
++			before, monoBefore := boottime(), time.Since(monoBase)
++			coarse := coarseClock()
++			after, monoAfter := boottime(), time.Since(monoBase)
++			if coarse.boot < before-int64(5*time.Millisecond) || coarse.boot > after+int64(5*time.Millisecond) {
++				t.Fatalf("coarse boottime %d outside kernel reads [%d, %d] after sample %+v", coarse.boot, before, after, sample)
++			}
++			if coarse.mono < int64(monoBefore) || coarse.mono > int64(monoAfter) {
++				t.Fatalf("coarse monotonic %d outside reads [%d, %d]", coarse.mono, monoBefore, monoAfter)
 +			}
 +		}
++	}
++}
++
++func TestStaleErrorNeedsSleep(t *testing.T) {
++	clock := &fakeClock{}
++	tracker := newReceiveTracker(clock.read, 20*time.Second)
++	clock.sleep(15 * time.Second)
++	clock.advance(4 * time.Second)
++	if err := tracker.staleError(); err != nil {
++		t.Fatal("asleep, silence under staleAfter: ", err)
++	}
++
++	tracker.touch()
++	clock.advance(time.Minute)
++	clock.sleep(minAsleep - time.Millisecond)
++	if err := tracker.staleError(); err != nil {
++		t.Fatal("awake outage judged stale: ", err)
++	}
++	clock.sleep(time.Millisecond)
++	if err := tracker.staleError(); !errors.Is(err, errStaleConnection) {
++		t.Fatal("silence with sleep in it not stale: ", err)
++	}
++
++	tracker.touch()
++	clock.sleep(21 * time.Second)
++	if err := tracker.staleError(); !errors.Is(err, errStaleConnection) {
++		t.Fatal("sleep past staleAfter not stale: ", err)
 +	}
 +}
 +
@@ -440,7 +494,7 @@ index 0000000..e103d01
 +	onRead, _ := conn.IOActivityFuncs()
 +	clock.advance(time.Second)
 +	onRead(1)
-+	if tracker.last.Load() != clock.read() {
++	if !clock.stamped(tracker) {
 +		t.Fatal("fd path read not tracked")
 +	}
 +	sender, err := net.DialUDP("udp", nil, udpConn.LocalAddr().(*net.UDPAddr))
@@ -456,7 +510,7 @@ index 0000000..e103d01
 +	if _, _, err = conn.ReadFrom(make([]byte, 16)); err != nil {
 +		t.Fatal(err)
 +	}
-+	if tracker.last.Load() != clock.read() {
++	if !clock.stamped(tracker) {
 +		t.Fatal("ReadFrom not tracked")
 +	}
 +	opaque := &receivePacketConn{PacketConn: struct{ net.PacketConn }{udpConn}, receive: tracker}
@@ -481,7 +535,7 @@ index 0000000..e103d01
 +			conn := h.offer(t)
 +			session := h.listen(t)
 +			for range 3 {
-+				h.clock.advance(h.client.staleAfter - time.Second)
++				h.clock.sleep(h.client.staleAfter - time.Second)
 +				if h.offer(t) != conn {
 +					t.Fatal("fresh connection replaced")
 +				}
@@ -508,6 +562,24 @@ index 0000000..e103d01
 +				t.Fatal("replacement connection inactive")
 +			}
 +			echoPacket(t, h.listen(t))
++		})
++	}
++}
++
++func TestAwakeSilenceKeepsConnection(t *testing.T) {
++	for _, variant := range staleVariants {
++		t.Run(variant.name, func(t *testing.T) {
++			h := newStaleHarness(t, variant.salamander)
++			conn := h.offer(t)
++			h.server.silence(conn.quicConn.LocalAddr())
++			h.clock.advance(2 * h.client.staleAfter)
++			if h.offer(t) != conn {
++				t.Fatal("connection replaced after a silence spent awake")
++			}
++			h.untilStale(t, func() bool {
++				return h.offer(t) != conn
++			})
++			waitStaleClosed(t, conn)
 +		})
 +	}
 +}
@@ -654,13 +726,13 @@ index 0000000..e103d01
 +	return stream
 +}
 +
-+// untilStale pushes the clock past staleAfter until probe sees it act; packets already in flight when the
++// untilStale sleeps the clock past staleAfter until probe sees it act; packets already in flight when the
 +// server went silent may still freshen the connection once or twice.
 +func (h *staleHarness) untilStale(t *testing.T, probe func() bool) {
 +	t.Helper()
 +	deadline := time.Now().Add(5 * time.Second)
 +	for {
-+		h.clock.advance(h.client.staleAfter + time.Second)
++		h.clock.sleep(h.client.staleAfter + time.Second)
 +		if probe() {
 +			return
 +		}
@@ -716,15 +788,34 @@ index 0000000..e103d01
 +}
 +
 +type fakeClock struct {
-+	now atomic.Int64
++	access sync.Mutex
++	now    clockReading
 +}
 +
-+func (c *fakeClock) read() int64 {
-+	return c.now.Load()
++func (c *fakeClock) read() clockReading {
++	c.access.Lock()
++	defer c.access.Unlock()
++	return c.now
 +}
 +
++// advance passes time awake, which both clocks count.
 +func (c *fakeClock) advance(d time.Duration) {
-+	c.now.Add(int64(d))
++	c.access.Lock()
++	c.now.boot += int64(d)
++	c.now.mono += int64(d)
++	c.access.Unlock()
++}
++
++// sleep passes time in device sleep, which only boottime counts.
++func (c *fakeClock) sleep(d time.Duration) {
++	c.access.Lock()
++	c.now.boot += int64(d)
++	c.access.Unlock()
++}
++
++func (c *fakeClock) stamped(tracker *receiveTracker) bool {
++	now := c.read()
++	return tracker.lastBoot.Load() == now.boot && tracker.lastMono.Load() == now.mono
 +}
 +
 +// silencingPacketConn drops the server's packets to silenced clients, like a server that has forgotten them.

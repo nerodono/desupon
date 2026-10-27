@@ -57,6 +57,8 @@ internal interface CoreGateway {
 
     fun resetNetwork()
 
+    fun resetOutbound(tag: String)
+
     fun closeService()
 
     fun newClient(handler: CommandClientHandler): CoreClient
@@ -91,6 +93,8 @@ internal class RuntimeGateway(private val app: Context, private val runtime: Cor
     override fun closeConnections() = Bridge.closeConnections(runtime.requireServer())
 
     override fun resetNetwork() = Bridge.resetNetwork(runtime.requireServer())
+
+    override fun resetOutbound(tag: String) = Bridge.resetOutbound(runtime.requireServer(), tag)
 
     override fun closeService() = runtime.closeService()
 
@@ -171,6 +175,8 @@ class LibboxCommand internal constructor(
     override suspend fun closeConnections() = onCore { core.closeConnections() }
 
     override suspend fun resetNetwork() = onCore { core.resetNetwork() }
+
+    override suspend fun resetOutbound(tag: String) = onCore { core.resetOutbound(tag) }
 
     override suspend fun stop() = withContext(io) {
         disconnectClient()
