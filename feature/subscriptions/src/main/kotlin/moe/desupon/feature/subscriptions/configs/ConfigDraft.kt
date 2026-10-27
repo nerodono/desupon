@@ -1,7 +1,9 @@
 package moe.desupon.feature.subscriptions.configs
 
+import moe.desupon.feature.subscriptions.Messages
 import moe.desupon.feature.subscriptions.R
 import moe.desupon.feature.subscriptions.UiText
+import moe.desupon.model.node.Capability
 import moe.desupon.model.selection.SetId
 import moe.desupon.model.subscription.SubId
 import moe.desupon.parser.ConfigParser
@@ -69,11 +71,23 @@ internal data class ConfigDraft(
     /** A fresh form for [protocol], replacing whatever was entered. */
     fun newForm(protocol: FormProtocol) = copy(mode = ConfigMode.FORM, form = ConfigForm.blank(protocol), error = null, formNote = null)
 
-    /** Checks what the repository cannot report; unchanged when the draft can be submitted. */
-    fun validate(): ConfigDraft = when {
-        mode == ConfigMode.TEXT && text.isBlank() -> copy(error = UiText.Res(R.string.subs_config_error_empty))
-        mode == ConfigMode.FORM && form == null -> copy(error = UiText.Res(R.string.subs_config_form_pick_protocol))
-        else -> this
+    /**
+     * Checks what the repository cannot report; [error] is set when the draft cannot be submitted.
+     * A form must also read back as exactly one runnable node, so it never saves something the core would refuse.
+     */
+    fun validate(): ConfigDraft {
+        if (mode == ConfigMode.TEXT) return if (text.isBlank()) copy(error = UiText.Res(R.string.subs_config_error_empty)) else copy(error = null)
+        val f = form ?: return copy(error = UiText.Res(R.string.subs_config_form_pick_protocol))
+        val checked = f.validate()
+        if (checked.errors.isNotEmpty()) return copy(form = checked, error = UiText.Res(R.string.subs_form_fix))
+        val read = ConfigParser.read(checked.toText(), SubId(0))
+        read.error?.let { return copy(form = checked, error = Messages.configError(it)) }
+        val node = read.nodes.singleOrNull()
+        if (node == null || node.capability != Capability.SUPPORTED) {
+            val reason = node?.let { read.unsupportedReasons[it.id] } ?: "?"
+            return copy(form = checked, error = UiText.Res(R.string.subs_form_unsupported, listOf(reason)))
+        }
+        return copy(form = checked, error = null)
     }
 
     companion object {

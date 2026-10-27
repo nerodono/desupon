@@ -46,7 +46,7 @@ class ConfigDraftTest {
         val formless = ConfigDraft.new().copy(mode = ConfigMode.FORM)
         assertEquals(UiText.Res(R.string.subs_config_form_pick_protocol), formless.validate().error)
         val ok = ConfigDraft.new().text(link)
-        assertSame(ok, ok.validate())
+        assertEquals(ok, ok.validate())
     }
 
     @Test

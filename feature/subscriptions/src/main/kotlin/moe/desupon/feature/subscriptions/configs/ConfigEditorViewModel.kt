@@ -155,11 +155,11 @@ class ConfigEditorViewModel internal constructor(
     }
 
     fun save() {
-        val current = _draft.value ?: return
-        if (current.saving) return
-        val checked = current.validate()
-        if (checked != current) {
-            _draft.value = checked
+        val draft = _draft.value ?: return
+        if (draft.saving) return
+        val current = draft.validate()
+        if (current.error != null) {
+            _draft.value = current
             return
         }
         _draft.value = current.copy(saving = true)
