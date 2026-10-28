@@ -30,6 +30,9 @@ import java.io.File
 
 enum class ThemePreference { SYSTEM, LIGHT, DARK }
 
+/** How much of the core log is kept, from least to most. */
+enum class LogVerbosity { ERRORS, WARNINGS, INFO, DEBUG }
+
 data class UiSettings(
     val theme: ThemePreference = ThemePreference.SYSTEM,
     val amoled: Boolean = false,
@@ -100,6 +103,10 @@ class SettingsRepository(private val store: DataStore<Preferences>) : SettingsPo
             },
             unmeteredOnly = p[GEO_UNMETERED_ONLY] ?: true,
         )
+    }.distinctUntilChanged()
+
+    val logVerbosity: Flow<LogVerbosity> = store.data.map { p ->
+        p[LOG_VERBOSITY]?.let { v -> LogVerbosity.entries.firstOrNull { it.name == v } } ?: LogVerbosity.WARNINGS
     }.distinctUntilChanged()
 
     /** Survives [resetAll]. */
@@ -207,6 +214,10 @@ class SettingsRepository(private val store: DataStore<Preferences>) : SettingsPo
     }
 
     suspend fun setGeoUnmeteredOnly(enabled: Boolean) = put(GEO_UNMETERED_ONLY, enabled)
+
+    suspend fun setLogVerbosity(verbosity: LogVerbosity) {
+        store.edit { it[LOG_VERBOSITY] = verbosity.name }
+    }
 
     suspend fun updateGeoStatus(kind: GeoKind, transform: (GeoFileStatus) -> GeoFileStatus) {
         store.edit { p -> p.putGeoStatus(kind, transform(p.geoStatus(kind))) }
@@ -340,10 +351,12 @@ class SettingsRepository(private val store: DataStore<Preferences>) : SettingsPo
         private const val GEO_INTERVAL_MANUAL = 0
         private val GEO_STATUS = GeoKind.entries.associateWith(::GeoStatusKeys)
 
+        private val LOG_VERBOSITY = stringPreferencesKey("core_log_verbosity")
+
         private val APP_SPLIT_KEYS = listOf(SPLIT_MODE, PACKAGES_EXCEPT, PACKAGES_ONLY, PREFIXES, PREFIX_BYPASS, FORCE_TUNNEL)
         private val RESETTABLE_KEYS = APP_SPLIT_KEYS + listOf(
             THEME, AMOLED, DESU_MODE, DYNAMIC_COLOR, SIMPLE_MODE, SHOW_SYSTEM_APPS, LAN_BYPASS, IPV4_ONLY, DNS_REMOTE, SUB_USER_AGENT,
-            GEO_AUTO, GEOIP_URL, GEOSITE_URL, GEO_INTERVAL, GEO_UNMETERED_ONLY,
+            GEO_AUTO, GEOIP_URL, GEOSITE_URL, GEO_INTERVAL, GEO_UNMETERED_ONLY, LOG_VERBOSITY,
         )
 
         /** One instance per process: DataStore forbids two stores on the same file. */

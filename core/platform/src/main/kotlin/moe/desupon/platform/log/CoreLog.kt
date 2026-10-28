@@ -25,3 +25,11 @@ enum class CoreLogLevel(val core: Int, val androidPriority: Int) {
 
 /** [message] is already masked. */
 data class CoreLogEntry(val level: CoreLogLevel, val message: String)
+
+/** Core lines for the platform come with ANSI colours and a `LEVEL[seconds] ` prefix; the level travels separately. */
+internal object CoreLogText {
+    private val ansi = Regex("\u001B\\[[0-9;]*m")
+    private val prefix = Regex("^(?:PANIC|FATAL|ERROR|WARN|NOTICE|INFO|DEBUG|TRACE)\\[\\d+] ")
+
+    fun clean(raw: String?): String = Redactor.mask(prefix.replaceFirst(ansi.replace(raw.orEmpty(), ""), ""))
+}

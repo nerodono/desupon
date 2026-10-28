@@ -18,7 +18,7 @@ data class OomOptions(
 object LibboxSetup {
     private const val BOX_DIR = "box"
     private const val CONFIG_SNAPSHOT = "configuration.json"
-    private const val LOG_MAX_LINES = 3000
+    internal const val LOG_MAX_LINES = 3000
 
     @Volatile
     private var done = false

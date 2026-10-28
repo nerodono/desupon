@@ -15,6 +15,7 @@ import moe.desupon.data.geo.GeoFileStatus
 import moe.desupon.data.geo.GeoKind
 import moe.desupon.data.repo.SplitRuleRepository
 import moe.desupon.data.ruleset.RuleSetStore
+import moe.desupon.data.settings.LogVerbosity
 import moe.desupon.data.settings.SettingsRepository
 import moe.desupon.data.settings.ThemePreference
 import moe.desupon.data.settings.UiSettings
@@ -91,6 +92,9 @@ class SettingsViewModel(
         GeoUiState(config, GeoKind.entries.map { GeoFileUi(it, statuses.getValue(it), downloaded[it].orEmpty().size) }, running, waiting)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), GeoUiState())
 
+    val logVerbosity: StateFlow<LogVerbosity> =
+        settings.logVerbosity.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), LogVerbosity.WARNINGS)
+
     val config: StateFlow<ConfigState> = lastConfig.maskedConfig()
         .map { json -> json?.takeIf { it.isNotBlank() }?.let(ConfigState::Ready) ?: ConfigState.None }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ConfigState.Loading)
@@ -108,6 +112,8 @@ class SettingsViewModel(
     fun setLanBypass(enabled: Boolean) = launch { settings.setLanBypass(enabled) }
 
     fun setIpv4Only(enabled: Boolean) = launch { settings.setIpv4Only(enabled) }
+
+    fun setLogVerbosity(verbosity: LogVerbosity) = launch { settings.setLogVerbosity(verbosity) }
 
     /** Returns false and saves nothing when [address] is not a supported DNS address; blank restores the default. */
     fun setDnsRemote(address: String): Boolean {

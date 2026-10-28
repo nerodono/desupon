@@ -110,6 +110,7 @@ internal fun ChoiceRow(
     title: String,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
+    subtitle: String? = null,
     enabled: Boolean = true,
     choices: @Composable FlowRowScope.() -> Unit,
 ) {
@@ -129,6 +130,9 @@ internal fun ChoiceRow(
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), content = choices)
+            if (subtitle != null) {
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha))
+            }
         }
     }
 }

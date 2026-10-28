@@ -218,6 +218,16 @@ internal object SettingsGlyphs {
             }
         }
     }
+
+    val Logs by lazy {
+        glyph("Logs") {
+            stroke {
+                moveTo(4f, 4f); horizontalLineTo(20f); verticalLineTo(20f); horizontalLineTo(4f); close()
+                moveTo(7.5f, 9f); lineTo(10f, 11.5f); lineTo(7.5f, 14f)
+                moveTo(12f, 15f); horizontalLineTo(16.5f)
+            }
+        }
+    }
 }
 
 private class GlyphScope(val builder: ImageVector.Builder) {

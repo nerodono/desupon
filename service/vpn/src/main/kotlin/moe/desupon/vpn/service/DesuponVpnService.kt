@@ -213,7 +213,7 @@ class DesuponVpnService : VpnService(), VpnHost, KoinComponent {
                         .distinctUntilChanged()
                         .collect(b::onEvent)
                 }
-                forwardRecovery(wakes, observer, { runtime.log(CoreLogLevel.INFO, it) }, b)
+                forwardRecovery(wakes, observer, { runtime.log(CoreLogLevel.NOTICE, it) }, b)
                 registerReceivers(b)
                 b.connect()
                 awaitCancellation()
