@@ -3,10 +3,13 @@ package moe.desupon.platform.libbox
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import moe.desupon.core.libbox.CommandClientHandler
 import moe.desupon.model.routing.AppSplit
 import moe.desupon.platform.log.CoreException
+import moe.desupon.platform.log.CoreLogEntry
+import moe.desupon.platform.log.CoreLogLevel
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -49,17 +52,27 @@ class LibboxCommandTest {
             calls += "closeService"
         }
 
-        override fun newClient(handler: CommandClientHandler): CoreClient = object : CoreClient {
-            override fun connect() {
-                calls += "connect"
-                connectGate.await(5, TimeUnit.SECONDS)
-                calls += "connected"
-            }
+        val handlers: MutableList<Pair<Boolean, CommandClientHandler>> = Collections.synchronizedList(mutableListOf())
 
-            override fun disconnect() {
-                calls += "disconnect"
+        override fun newClient(handler: CommandClientHandler, logs: Boolean): CoreClient {
+            handlers += logs to handler
+            val tag = if (logs) "log:" else ""
+            return object : CoreClient {
+                override fun connect() {
+                    calls += "${tag}connect"
+                    connectGate.await(5, TimeUnit.SECONDS)
+                    calls += "${tag}connected"
+                }
+
+                override fun disconnect() {
+                    calls += "${tag}disconnect"
+                }
             }
         }
+
+        fun streamCalls() = calls.toList().filterNot { it.startsWith("log:") }
+
+        fun logClients() = handlers.toList().filter { it.first }.map { it.second }
     }
 
     private val core = FakeGateway()
@@ -75,7 +88,54 @@ class LibboxCommandTest {
         assertFalse(reload.isCompleted, "reload returned before the client dialed")
         core.connectGate.countDown()
         reload.await()
-        assertEquals(listOf("reload", "connect", "connected"), core.calls.toList())
+        assertEquals(listOf("reload", "connect", "connected"), core.streamCalls())
+    }
+
+    @Test
+    fun theLogStreamOpensOnceAndOutlivesReloadsAndStop() = runBlocking<Unit> {
+        val cmd = command()
+        cmd.reload("{}", AppSplit())
+        cmd.reload("{}", AppSplit())
+        cmd.stop()
+        delay(100)
+        assertEquals(1, core.logClients().size, "one log client per server")
+        assertEquals(2, core.handlers.count { !it.first }, "a stream client per reload")
+        assertFalse("log:disconnect" in core.calls, "the log stream stays until the server detaches")
+        val counts = core.streamCalls().groupingBy { it }.eachCount()
+        assertEquals(mapOf("reload" to 2, "connect" to 2, "connected" to 2, "disconnect" to 2, "closeService" to 1), counts)
+    }
+
+    @Test
+    fun aFailedLogStreamRedialsWithAFreshClientAndTheOldOneGoesQuiet() = runBlocking<Unit> {
+        val cmd = command()
+        cmd.reload("{}", AppSplit())
+        val first = core.logClients().single()
+        first.disconnected("log stream recv: rpc error: code = Unavailable desc = error reading from server: EOF")
+        delay(1_000)
+        assertEquals(2, core.logClients().size)
+        first.disconnected("again")
+        delay(1_000)
+        assertEquals(2, core.logClients().size, "a replaced client's callbacks are ignored")
+    }
+
+    @Test
+    fun staleStreamEndsAreNotLogged() = runBlocking<Unit> {
+        val cmd = command()
+        val seen = Collections.synchronizedList(mutableListOf<CoreLogEntry>())
+        val collector = launch(Dispatchers.IO) { cmd.logs.collect { seen += it } }
+        delay(50)
+        cmd.reload("{}", AppSplit())
+        val old = core.handlers.last { !it.first }.second
+        cmd.reload("{}", AppSplit())
+        old.disconnected("status stream recv: rpc error: code = Canceled desc = context canceled")
+        val current = core.handlers.last { !it.first }.second
+        current.disconnected("group stream recv: unexpected failure")
+        current.disconnected("status stream recv: rpc error: code = Canceled desc = context canceled")
+        delay(1_000)
+        core.handlers.last { !it.first }.second.disconnected("status stream recv: EOF")
+        delay(100)
+        collector.cancel()
+        assertEquals(listOf(CoreLogLevel.WARN, CoreLogLevel.DEBUG), seen.map { it.level }, "only current clients are noted, routine ends at debug")
     }
 
     @Test

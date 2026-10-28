@@ -6,6 +6,8 @@ import moe.desupon.platform.log.LogLine
 import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class LogViewTest {
     private val lines = listOf(
@@ -29,7 +31,7 @@ class LogViewTest {
     @Test
     fun showFiltersByLevelAndKeepsSessionMarks() {
         assertEquals(lines, LogFilter.apply(lines, "", LogShow.ALL))
-        assertEquals(listOf(1L, 3L, 4L, 6L), LogFilter.apply(lines, "", LogShow.WARNINGS).map { it.seq })
+        assertEquals(listOf(1L, 2L, 3L, 4L, 6L), LogFilter.apply(lines, "", LogShow.WARNINGS).map { it.seq }, "start notices come with warnings")
         assertEquals(listOf(1L, 4L, 6L), LogFilter.apply(lines, "", LogShow.ERRORS).map { it.seq })
     }
 
@@ -59,5 +61,22 @@ class LogViewTest {
         assertEquals("cut 6", out.first())
         assertEquals("00:00:05.000 -- s --", out.last())
         assertEquals(3, out.size, out.joinToString("\n"))
+    }
+
+    @Test
+    fun aFullBufferExportStaysWithinTheCap() {
+        val many = (1..2_000L).map { LogLine.Entry(it, it, CoreLogLevel.WARN, "outbound/hysteria2[n-${"0".repeat(16)}]: " + "x".repeat(100)) }
+        val text = LogExport.text(many, { "s" }, { "cut $it" }, ZoneOffset.UTC)
+        assertTrue(text.length <= LogExport.MAX_CHARS, "${text.length}")
+        assertTrue(text.startsWith("cut 2000"))
+        assertTrue(text.endsWith("x".repeat(100)), "the newest line is kept")
+    }
+
+    @Test
+    fun followingStopsOrResumesWhereAScrollEnds() {
+        assertTrue(TailFollow.afterScroll(following = false, hasItems = true, atEnd = true))
+        assertFalse(TailFollow.afterScroll(following = true, hasItems = true, atEnd = false))
+        assertFalse(TailFollow.afterScroll(following = false, hasItems = false, atEnd = true), "an empty layout says nothing about the user")
+        assertTrue(TailFollow.afterScroll(following = true, hasItems = false, atEnd = true))
     }
 }

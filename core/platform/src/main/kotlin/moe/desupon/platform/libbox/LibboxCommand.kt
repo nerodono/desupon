@@ -44,7 +44,7 @@ import moe.desupon.platform.log.CoreException
 import moe.desupon.platform.log.CoreLogEntry
 import moe.desupon.platform.log.CoreLogLevel
 import moe.desupon.platform.log.CoreLogText
-import moe.desupon.platform.log.LogReplay
+import moe.desupon.platform.log.LogIntake
 import moe.desupon.platform.log.Redactor
 
 /** Native calls of [LibboxCommand]; a seam so its sequencing runs without the core library. */
@@ -63,7 +63,8 @@ internal interface CoreGateway {
 
     fun closeService()
 
-    fun newClient(handler: CommandClientHandler): CoreClient
+    /** A client for the log stream alone when [logs], else for the status, group and connection streams. */
+    fun newClient(handler: CommandClientHandler, logs: Boolean): CoreClient
 }
 
 internal interface CoreClient {
@@ -100,13 +101,16 @@ internal class RuntimeGateway(private val app: Context, private val runtime: Cor
 
     override fun closeService() = runtime.closeService()
 
-    override fun newClient(handler: CommandClientHandler): CoreClient {
+    override fun newClient(handler: CommandClientHandler, logs: Boolean): CoreClient {
         val options = CommandClientOptions().apply {
-            addCommand(Libbox.CommandStatus)
-            addCommand(Libbox.CommandGroup)
-            addCommand(Libbox.CommandConnections)
-            addCommand(Libbox.CommandLog)
-            statusInterval = STATUS_INTERVAL_NS
+            if (logs) {
+                addCommand(Libbox.CommandLog)
+            } else {
+                addCommand(Libbox.CommandStatus)
+                addCommand(Libbox.CommandGroup)
+                addCommand(Libbox.CommandConnections)
+                statusInterval = STATUS_INTERVAL_NS
+            }
         }
         val client = CommandClient(handler, options)
         return object : CoreClient {
@@ -121,7 +125,7 @@ internal class RuntimeGateway(private val app: Context, private val runtime: Cor
     }
 }
 
-/** [LibboxControl] over the in-process command server; status, group, connection and log streams come from a unix-socket client. */
+/** [LibboxControl] over the in-process command server; status, group, connection and log streams come from unix-socket clients. */
 class LibboxCommand internal constructor(
     private val core: CoreGateway,
     private val ownPackage: String,
@@ -156,19 +160,30 @@ class LibboxCommand internal constructor(
     val defaultLogLevel: StateFlow<CoreLogLevel> = _defaultLogLevel.asStateFlow()
 
     private val table = ConnectionTable()
-    private var client: CoreClient? = null
-    private var dialJob: Job? = null
-    private var epoch = 0
+
+    // Status, group and connection streams belong to one box and are reopened with every reload.
+    private val streams = Link(logs = false) { generation -> StreamHandler(generation) }
+
+    // The log stream belongs to the command server, so it stays open across reloads until the server goes.
+    private val logLink = Link(logs = true) { generation -> LogHandler(generation, intake!!.session()) }
+    private var intake: LogIntake? = null
 
     init {
-        core.onAttachChanged { attached -> if (!attached) disconnectClient() }
+        core.onAttachChanged { attached ->
+            if (!attached) {
+                disconnectClient()
+                closeLogs()
+            }
+        }
     }
 
     /** Returns once the streams of the new service are open, or after [dialWaitMs] without them. */
     override suspend fun reload(configJson: String, apps: AppSplit) {
+        // The old box's streams end during the reload; their callbacks are stale from here on.
+        streams.close()
         onCore { core.startOrReload(configJson, PackageOverrides.of(apps, ownPackage)) }
-        // Streams open only on a started service and end when it restarts.
-        val dial = connectClient()
+        openLogs()
+        val dial = streams.open()
         withTimeoutOrNull(dialWaitMs) { dial.join() }
     }
 
@@ -180,6 +195,7 @@ class LibboxCommand internal constructor(
 
     override suspend fun resetOutbound(tag: String) = onCore { core.resetOutbound(tag) }
 
+    /** Logs stay connected until the server detaches, so the box's shutdown is recorded. */
     override suspend fun stop() = withContext(io) {
         disconnectClient()
         core.closeService()
@@ -193,80 +209,152 @@ class LibboxCommand internal constructor(
         }
     }
 
-    private fun connectClient(): Job = synchronized(this) {
-        val myEpoch = ++epoch
-        if (client == null) client = core.newClient(Handler())
-        dialJob?.cancel()
-        scope.launch { dial(myEpoch, 0) }.also { dialJob = it }
-    }
-
-    /** One dial loop at a time: every stream reports its own disconnect. */
-    private fun scheduleRedial() {
-        synchronized(this) {
-            if (client == null || dialJob?.isActive == true) return
-            val myEpoch = epoch
-            dialJob = scope.launch { dial(myEpoch, RETRY_BASE_MS) }
+    /** Opens the log stream once per server; it can open only after a box has started. */
+    private fun openLogs() {
+        synchronized(logLink) {
+            if (logLink.isOpen) return
+            intake?.close()
+            intake = LogIntake(LibboxSetup.LOG_MAX_LINES) { _logs.tryEmit(it.copy(message = CoreLogText.clean(it.message))) }
+            logLink.open()
         }
     }
 
-    private suspend fun dial(myEpoch: Int, initialDelayMs: Long) {
-        var wait = initialDelayMs
-        while (true) {
-            if (wait > 0) delay(wait)
-            val c = synchronized(this) { client.takeIf { epoch == myEpoch } } ?: return
-            if (runCatching { c.connect() }.isSuccess) return
-            wait = (wait * 2).coerceIn(RETRY_BASE_MS, RETRY_MAX_MS)
+    private fun closeLogs() {
+        synchronized(logLink) {
+            logLink.close()
+            intake?.close()
+            intake = null
         }
     }
 
     private fun disconnectClient() {
-        val c = synchronized(this) {
-            epoch++
-            dialJob?.cancel()
-            dialJob = null
-            val old = client
-            client = null
-            old
-        }
-        if (c != null) scope.launch { runCatching { c.disconnect() } }
+        streams.close()
         _groups.value = emptyList()
         _status.value = TrafficStatus(0, 0, 0, 0, 0, 0)
         synchronized(table) { _allConnections.value = table.apply(true, emptyList(), System.currentTimeMillis()) }
     }
 
-    private fun active() = synchronized(this) { client != null }
+    /** A stream of the current client ended; ends of streams the client was closed for are routine. */
+    private fun noteDisconnect(message: String?) {
+        val text = Redactor.mask(message)
+        val level = if (STREAM_END.containsMatchIn(text)) CoreLogLevel.DEBUG else CoreLogLevel.WARN
+        _logs.tryEmit(CoreLogEntry(level, "command client: $text"))
+    }
 
-    private inner class Handler : CommandClientHandler {
-        private val replay = LogReplay(LibboxSetup.LOG_MAX_LINES)
+    /** One command client and its redial loop; every open makes a new client, so callbacks of replaced ones are told apart by generation. */
+    private inner class Link(private val logs: Boolean, private val handler: (generation: Int) -> CommandClientHandler) {
+        private var client: CoreClient? = null
+        private var job: Job? = null
+        private var generation = 0
+        private var failures = 0
+
+        val isOpen: Boolean get() = synchronized(this) { client != null }
+
+        fun isCurrent(generation: Int): Boolean = synchronized(this) { generation == this.generation && client != null }
+
+        /** The job completes once the new client has connected. */
+        fun open(): Job = synchronized(this) {
+            failures = 0
+            replace(0)
+        }
+
+        /** The current client lost a stream: a new client, after a delay that grows while this keeps happening. */
+        fun redial(generation: Int) {
+            synchronized(this) {
+                if (!isCurrent(generation)) return
+                failures++
+                replace((RETRY_BASE_MS shl (failures - 1).coerceAtMost(RETRY_DOUBLINGS)).coerceAtMost(RETRY_MAX_MS))
+            }
+        }
+
+        fun close() {
+            val old = synchronized(this) {
+                generation++
+                job?.cancel()
+                job = null
+                client.also { client = null }
+            }
+            old?.let { scope.launch { runCatching { it.disconnect() } } }
+        }
+
+        private fun replace(delayMs: Long): Job {
+            val old = client
+            val next = ++generation
+            job?.cancel()
+            val c = core.newClient(handler(next), logs)
+            client = c
+            old?.let { scope.launch { runCatching { it.disconnect() } } }
+            return scope.launch { dial(next, c, delayMs) }.also { job = it }
+        }
+
+        private suspend fun dial(generation: Int, c: CoreClient, initialDelayMs: Long) {
+            var wait = initialDelayMs
+            while (true) {
+                if (wait > 0) delay(wait)
+                if (!isCurrent(generation)) return
+                if (runCatching { c.connect() }.isSuccess) return
+                wait = (wait * 2).coerceIn(RETRY_BASE_MS, RETRY_MAX_MS)
+            }
+        }
+    }
+
+    private inner class LogHandler(private val generation: Int, private val session: LogIntake.Session) : CommandClientHandler {
+        override fun connected() {}
+
+        override fun disconnected(message: String?) {
+            if (!logLink.isCurrent(generation)) return
+            noteDisconnect(message)
+            logLink.redial(generation)
+        }
+
+        override fun setDefaultLogLevel(level: Int) {
+            if (logLink.isCurrent(generation)) _defaultLogLevel.value = CoreLogLevel.fromCore(level)
+        }
+
+        override fun clearLogs() = session.cleared()
+
+        override fun writeLogs(messageList: LogIterator?) {
+            if (messageList == null) return
+            val batch = ArrayList<CoreLogEntry>()
+            while (messageList.hasNext()) {
+                val entry = messageList.next() ?: continue
+                batch += CoreLogEntry(CoreLogLevel.fromCore(entry.level), entry.message.orEmpty())
+            }
+            session.lines(batch)
+        }
+
+        override fun writeStatus(message: StatusMessage?) {}
+
+        override fun writeGroups(message: OutboundGroupIterator?) {}
+
+        override fun writeOutbounds(message: OutboundGroupItemIterator?) {}
+
+        override fun initializeClashMode(modeList: StringIterator?, currentMode: String?) {}
+
+        override fun updateClashMode(newMode: String?) {}
+
+        override fun writeConnectionEvents(events: ConnectionEvents?) {}
+    }
+
+    private inner class StreamHandler(private val generation: Int) : CommandClientHandler {
+        private fun current() = streams.isCurrent(generation)
 
         override fun connected() {}
 
         override fun disconnected(message: String?) {
-            if (!active()) return
-            _logs.tryEmit(CoreLogEntry(CoreLogLevel.WARN, "command client: " + Redactor.mask(message)))
-            scheduleRedial()
+            if (!current()) return
+            noteDisconnect(message)
+            streams.redial(generation)
         }
 
-        override fun setDefaultLogLevel(level: Int) {
-            if (active()) _defaultLogLevel.value = CoreLogLevel.fromCore(level)
-        }
+        override fun setDefaultLogLevel(level: Int) {}
 
-        override fun clearLogs() {
-            synchronized(replay) { replay.reset() }
-        }
+        override fun clearLogs() {}
 
-        override fun writeLogs(messageList: LogIterator?) {
-            if (messageList == null || !active()) return
-            val batch = ArrayList<CoreLogEntry>()
-            while (messageList.hasNext()) {
-                val entry = messageList.next() ?: continue
-                batch += CoreLogEntry(CoreLogLevel.fromCore(entry.level), CoreLogText.clean(entry.message))
-            }
-            synchronized(replay) { replay.accept(batch) }.forEach { _logs.tryEmit(it) }
-        }
+        override fun writeLogs(messageList: LogIterator?) {}
 
         override fun writeStatus(message: StatusMessage?) {
-            if (message == null || !active()) return
+            if (message == null || !current()) return
             _status.value = TrafficStatus(
                 uplinkRate = message.uplink,
                 downlinkRate = message.downlink,
@@ -278,7 +366,7 @@ class LibboxCommand internal constructor(
         }
 
         override fun writeGroups(message: OutboundGroupIterator?) {
-            if (message == null || !active()) return
+            if (message == null || !current()) return
             val out = mutableListOf<GroupInfo>()
             while (message.hasNext()) {
                 val g = message.next() ?: continue
@@ -300,7 +388,7 @@ class LibboxCommand internal constructor(
         override fun updateClashMode(newMode: String?) {}
 
         override fun writeConnectionEvents(events: ConnectionEvents?) {
-            if (events == null || !active()) return
+            if (events == null || !current()) return
             val converted = mutableListOf<ConnEvent>()
             val iterator = events.iterator()
             while (iterator.hasNext()) {
@@ -320,10 +408,12 @@ class LibboxCommand internal constructor(
 
     private companion object {
         const val DIAL_WAIT_MS = 3_000L
-        // Room for a whole replayed core ring.
+        // Room for a whole core ring sent when the log stream opens.
         const val LOG_BUFFER = 4_096
         const val RETRY_BASE_MS = 500L
         const val RETRY_MAX_MS = 5_000L
+        const val RETRY_DOUBLINGS = 4
+        val STREAM_END = Regex("(?i)cancel|EOF|unavailable")
     }
 }
 

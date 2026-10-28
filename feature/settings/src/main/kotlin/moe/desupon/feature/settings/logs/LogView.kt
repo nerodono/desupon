@@ -15,11 +15,16 @@ fun LogVerbosity.coreLevel(): CoreLogLevel = when (this) {
     LogVerbosity.DEBUG -> CoreLogLevel.DEBUG
 }
 
-/** Which kept lines the viewer shows; session marks always show. */
+/** Which kept lines the viewer shows, matching the verbosity setting's steps; session marks always show. */
 enum class LogShow(val maxLevel: CoreLogLevel) {
     ALL(CoreLogLevel.TRACE),
-    WARNINGS(CoreLogLevel.WARN),
+    WARNINGS(CoreLogLevel.NOTICE),
     ERRORS(CoreLogLevel.ERROR),
+}
+
+/** The viewer follows new lines until the user drags; a scroll that ends at the bottom resumes it. */
+internal object TailFollow {
+    fun afterScroll(following: Boolean, hasItems: Boolean, atEnd: Boolean): Boolean = if (hasItems) atEnd else following
 }
 
 internal object LogFilter {
@@ -66,6 +71,6 @@ internal object LogExport {
 
     private fun CoreLogLevel.letter(): Char = name.first()
 
-    /** Well under the binder limit that a share intent or a clip has to pass. */
-    const val MAX_CHARS = 200_000
+    /** The text travels as UTF-16 and twice (extra and ClipData) through a 1 MB binder buffer shared with other calls. */
+    const val MAX_CHARS = 50_000
 }

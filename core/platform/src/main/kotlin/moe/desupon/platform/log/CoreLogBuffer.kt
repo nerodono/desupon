@@ -24,10 +24,7 @@ fun interface CoreLogThreshold {
     fun levels(): Flow<CoreLogLevel>
 }
 
-/**
- * The core log of this process, in memory only: lines more verbose than the threshold are dropped as they arrive and
- * at most [capacity] lines stay, oldest out first. The core sends every level whatever its config says.
- */
+/** The core log of this process in memory only: the last [capacity] lines no more verbose than the threshold. */
 class CoreLogBuffer(
     source: Flow<CoreLogEntry>,
     sessions: (listener: (Boolean) -> Unit) -> Unit,
@@ -66,7 +63,7 @@ class CoreLogBuffer(
         add { LogLine.Entry(it, clock(), entry.level, entry.message) }
     }
 
-    /** Marks transitions only: the first report is the state at subscription, not an event. */
+    /** Marks starts and stops; the report made on subscribing counts only when the core is already running. */
     private fun onAttach(value: Boolean) {
         val previous = synchronized(lines) { attached.also { attached = value } }
         if (previous == value || (previous == null && !value)) return

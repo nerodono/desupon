@@ -140,6 +140,7 @@
     <string name="settings_logs_level_warnings">Предупреждения</string>
     <string name="settings_logs_level_info">Инфо</string>
     <string name="settings_logs_level_debug">Отладка</string>
+    <string name="settings_logs_level_hint_errors">Только ошибки</string>
     <string name="settings_logs_level_hint">Ошибки, предупреждения и запуск ядра</string>
     <string name="settings_logs_level_hint_private">Записываются и адреса сайтов, которые открывают приложения. Включайте на время поиска проблемы</string>
     <string name="logs_title">Логи sing-box</string>
@@ -151,6 +152,7 @@
     <string name="logs_share">Поделиться</string>
     <string name="logs_share_subject">Desupon: логи sing-box</string>
     <string name="logs_copy">Скопировать</string>
+    <string name="logs_export_failed">Не получилось передать логи</string>
     <string name="logs_clear">Очистить</string>
     <string name="logs_empty">Пока пусто</string>
     <string name="logs_empty_hint">Строки появляются, пока VPN включён. Сейчас записываются: %1$s</string>

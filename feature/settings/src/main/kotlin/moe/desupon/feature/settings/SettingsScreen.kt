@@ -451,11 +451,15 @@ private fun LogsSection(verbosity: LogVerbosity, onVerbosity: (LogVerbosity) -> 
             icon = SettingsGlyphs.Logs,
             onClick = onOpenLogs,
         )
-        val keepsSites = verbosity >= LogVerbosity.INFO
+        val hint = when (verbosity) {
+            LogVerbosity.ERRORS -> R.string.settings_logs_level_hint_errors
+            LogVerbosity.WARNINGS -> R.string.settings_logs_level_hint
+            LogVerbosity.INFO, LogVerbosity.DEBUG -> R.string.settings_logs_level_hint_private
+        }
         ChoiceRow(
             title = stringResource(R.string.settings_logs_level),
             icon = Icons.AutoMirrored.Filled.List,
-            subtitle = stringResource(if (keepsSites) R.string.settings_logs_level_hint_private else R.string.settings_logs_level_hint),
+            subtitle = stringResource(hint),
         ) {
             LogVerbosity.entries.forEach { v ->
                 FilterChip(selected = v == verbosity, onClick = { onVerbosity(v) }, label = { Text(verbosityLabel(v)) })

@@ -1,9 +1,9 @@
 package moe.desupon.feature.settings.logs
 
-import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -62,7 +62,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import moe.desupon.data.settings.LogVerbosity
 import moe.desupon.feature.settings.R
@@ -92,6 +91,7 @@ fun CoreLogScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val copied = stringResource(R.string.config_copied)
+    val failed = stringResource(R.string.logs_export_failed)
     val started = stringResource(R.string.logs_session_started)
     val stopped = stringResource(R.string.logs_session_stopped)
     val truncated = stringResource(R.string.logs_truncated)
@@ -101,7 +101,15 @@ fun CoreLogScreen(
     val list = rememberLazyListState()
     var follow by rememberSaveable { mutableStateOf(true) }
     LaunchedEffect(list) {
-        snapshotFlow { list.isScrollInProgress }.filter { !it }.collect { follow = !list.canScrollForward }
+        // On the drag itself: waiting for the scroll to end would let the next line's jump cancel a fling.
+        list.interactionSource.interactions.collect { if (it is DragInteraction.Start) follow = false }
+    }
+    LaunchedEffect(list) {
+        var scrolling = false
+        snapshotFlow { list.isScrollInProgress }.collect { now ->
+            if (scrolling && !now) follow = TailFollow.afterScroll(follow, list.layoutInfo.totalItemsCount > 0, !list.canScrollForward)
+            scrolling = now
+        }
     }
     val last = state.lines.lastOrNull()?.seq
     LaunchedEffect(last, follow) {
@@ -121,7 +129,7 @@ fun CoreLogScreen(
                 },
                 actions = {
                     val any = state.lines.isNotEmpty()
-                    IconButton(onClick = { context.shareText(export(), subject) }, enabled = any) {
+                    IconButton(onClick = { if (!context.shareText(export(), subject)) scope.launch { snackbar.showSnackbar(failed) } }, enabled = any) {
                         Icon(Icons.Filled.Share, contentDescription = stringResource(R.string.logs_share))
                     }
                     Box {
@@ -135,8 +143,13 @@ fun CoreLogScreen(
                                 onClick = {
                                     menu = false
                                     scope.launch {
-                                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("log", export())))
-                                        snackbar.showSnackbar(copied)
+                                        val done = try {
+                                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("log", export())))
+                                            true
+                                        } catch (_: RuntimeException) {
+                                            false
+                                        }
+                                        snackbar.showSnackbar(if (done) copied else failed)
                                     }
                                 },
                             )
@@ -305,14 +318,17 @@ private fun Empty(title: String, hint: String?) {
     }
 }
 
-private fun Context.shareText(text: String, subject: String) {
+/** False when the system refused the hand-off, e.g. no app takes text or the transaction was too large. */
+private fun Context.shareText(text: String, subject: String): Boolean {
     val send = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(Intent.EXTRA_SUBJECT, subject)
         putExtra(Intent.EXTRA_TEXT, text)
     }
-    try {
+    return try {
         startActivity(Intent.createChooser(send, null))
-    } catch (_: ActivityNotFoundException) {
+        true
+    } catch (_: RuntimeException) {
+        false
     }
 }
