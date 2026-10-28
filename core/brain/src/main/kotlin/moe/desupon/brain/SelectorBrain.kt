@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -238,6 +239,8 @@ class SelectorBrain(
 
         data object CheckNow : Event
 
+        data class ActivityChanged(val trafficFlowing: Boolean) : Event
+
         data class Wake(val sleptMs: Long) : Event
 
         data object Unblocked : Event
@@ -341,7 +344,6 @@ class SelectorBrain(
         private var unseen = false
         private val throughputChecked = HashSet<NetworkKey>()
 
-        @Volatile
         private var trafficFlowing = false
 
         suspend fun run(onEstablished: () -> Unit) {
@@ -550,7 +552,11 @@ class SelectorBrain(
         @OptIn(ExperimentalCoroutinesApi::class)
         private suspend fun loop() {
             while (true) {
-                val due = if (offline) null else listOfNotNull(recheckAt, retryAt, nextCheckAt).minOrNull()
+                val due = if (offline) null else listOfNotNull(
+                    recheckAt,
+                    retryAt?.takeIf { screenOn.value },
+                    nextCheckAt?.takeIf { screenOn.value && trafficFlowing },
+                ).minOrNull()
                 val event = if (due == null) {
                     events.receive()
                 } else {
@@ -567,6 +573,15 @@ class SelectorBrain(
             is Event.Split -> onSplit(event.split)
             is Event.Selection -> onSelection(event.selection)
             Event.CheckNow -> if (offline) Unit else check()
+            is Event.ActivityChanged -> {
+                // Idle checks have no timeout at all. Resume overdue checks after a fresh interval, without
+                // letting brief gaps in traffic keep postponing one that is already scheduled.
+                if (event.trafficFlowing && !trafficFlowing && nextCheckAt != null) {
+                    val now = clock.elapsedMs()
+                    if (nextCheckAt!! <= now) nextCheckAt = now + config.checkIntervalMs
+                }
+                trafficFlowing = event.trafficFlowing
+            }
             is Event.Wake -> startOver { resetSleepers(event.sleptMs) }
             Event.Unblocked -> startOver(::resetNetworkIfDue)
             Event.AppsChanged -> loaded?.let { reapply(it.plan, split) } ?: Unit
@@ -681,8 +696,10 @@ class SelectorBrain(
         @OptIn(ExperimentalCoroutinesApi::class)
         private suspend fun watchTraffic() {
             screenOn
-                .flatMapLatest { on -> if (on) libbox.status.map { it.uplinkRate > 0 || it.downlinkRate > 0 } else flowOf(false) }
-                .collect { trafficFlowing = it }
+                .flatMapLatest { on ->
+                    if (on) libbox.status.map { it.uplinkRate > 0 || it.downlinkRate > 0 }.distinctUntilChanged() else flowOf(false)
+                }
+                .collect { events.send(Event.ActivityChanged(it)) }
         }
 
         @OptIn(ExperimentalCoroutinesApi::class)

@@ -266,10 +266,13 @@ private fun ReadyState(
 
 @Composable
 private fun SessionTimer(startMs: Long) {
-    val now by produceState(System.currentTimeMillis(), startMs) {
-        while (true) {
-            value = System.currentTimeMillis()
-            delay(1000 - value % 1000)
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val now by produceState(System.currentTimeMillis(), startMs, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                value = System.currentTimeMillis()
+                delay(1000 - value % 1000)
+            }
         }
     }
     ConnectionTimer((now - startMs) / 1000)

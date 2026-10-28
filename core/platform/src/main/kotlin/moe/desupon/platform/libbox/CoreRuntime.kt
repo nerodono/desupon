@@ -1,6 +1,7 @@
 package moe.desupon.platform.libbox
 
 import android.content.Context
+import moe.desupon.core.bridge.Bridge
 import moe.desupon.core.libbox.CommandServer
 import moe.desupon.core.libbox.CommandServerHandler
 import moe.desupon.core.libbox.Libbox
@@ -8,6 +9,7 @@ import moe.desupon.core.libbox.SystemProxyStatus
 import moe.desupon.platform.iface.CorePlatform
 import moe.desupon.platform.iface.VpnHost
 import moe.desupon.platform.log.CoreException
+import moe.desupon.platform.log.CoreLogBuffer
 import moe.desupon.platform.log.CoreLogLevel
 import moe.desupon.platform.log.Redactor
 import moe.desupon.platform.net.NetworkObserver
@@ -23,6 +25,8 @@ class CoreRuntime(context: Context, val observer: NetworkObserver) {
 
     private val listeners = mutableListOf<(Boolean) -> Unit>()
 
+    private var logLevel = CoreLogBuffer.DEFAULT_THRESHOLD
+
     internal val server: CommandServer? get() = attached?.server
 
     val host: VpnHost? get() = attached?.host
@@ -32,6 +36,7 @@ class CoreRuntime(context: Context, val observer: NetworkObserver) {
     fun attach(host: VpnHost) {
         if (attached != null) return
         LibboxSetup.ensure(app)
+        Bridge.setPlatformLogLevel(logLevel.core)
         observer.start()
         val platform = CorePlatform(app, host, observer)
         val server = try {
@@ -57,6 +62,13 @@ class CoreRuntime(context: Context, val observer: NetworkObserver) {
     }
 
     internal fun requireServer(): CommandServer = server ?: throw CoreException("core: service is not running")
+
+    /** Cache the user's verbosity before attachment, and apply it at the source while the core runs. */
+    @Synchronized
+    internal fun setLogLevel(level: CoreLogLevel) {
+        logLevel = level
+        if (attached != null) Bridge.setPlatformLogLevel(level.core)
+    }
 
     /** Closes the box and the TUN interface but keeps the command server. */
     fun closeService() {

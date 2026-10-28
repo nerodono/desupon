@@ -344,7 +344,7 @@ class SelectorBrainTest {
         assertEquals(1, h.prober.live.size)
 
         h.libbox.traffic(true)
-        advance(15_000)
+        advance(45_000)
         assertEquals(2, h.prober.live.size)
         advance(45_000)
         assertEquals(3, h.prober.live.size)
@@ -356,6 +356,87 @@ class SelectorBrainTest {
         h.brain.onScreenChanged(true)
         advance(45_000)
         assertEquals(4, h.prober.live.size)
+    }
+
+    @Test
+    fun `an idle connection has no periodic timer wakeups`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val h = Harness(this, listOf(d1))
+        h.alive(d1)
+        h.connectOn(WIFI)
+        runCurrent()
+        val idleReads = h.clock.elapsedReads
+
+        advance(24 * 60 * 60_000L)
+
+        assertEquals(idleReads, h.clock.elapsedReads)
+        assertEquals(1, h.prober.live.size)
+        h.libbox.traffic(true)
+        advance(45_000)
+        assertEquals(2, h.prober.live.size)
+    }
+
+    @Test
+    fun `brief traffic gaps do not postpone the next health check`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val h = Harness(this, listOf(d1))
+        h.alive(d1)
+        h.connectOn(WIFI)
+        h.libbox.traffic(true)
+        advance(10_000)
+        h.libbox.traffic(false)
+        advance(10_000)
+        h.libbox.traffic(true)
+
+        advance(25_000)
+
+        assertEquals(2, h.prober.live.size)
+    }
+
+    @Test
+    fun `screen off suspends periodic timers until activity resumes`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val h = Harness(this, listOf(d1))
+        h.alive(d1)
+        h.connectOn(WIFI)
+        h.libbox.traffic(true)
+        advance(45_000)
+        assertEquals(2, h.prober.live.size)
+        h.brain.onScreenChanged(false)
+        runCurrent()
+        val sleepingReads = h.clock.elapsedReads
+
+        advance(24 * 60 * 60_000L)
+
+        assertEquals(sleepingReads, h.clock.elapsedReads)
+        assertEquals(2, h.prober.live.size)
+        h.brain.onScreenChanged(true)
+        advance(45_000)
+        assertEquals(3, h.prober.live.size)
+    }
+
+    @Test
+    fun `screen off suspends degraded retry timers and screen on retries immediately`() = runTest {
+        val d1 = Nodes.ss("d1")
+        val h = Harness(this, listOf(d1))
+        h.connectOn(WIFI, NetworkMode.OFFLINE)
+        assertIs<ConnState.Degraded>(h.brain.state.value)
+        h.brain.onScreenChanged(false)
+        runCurrent()
+        val sleepingReads = h.clock.elapsedReads
+        val live = h.prober.live.size
+        val pools = h.prober.poolRequests.size
+
+        advance(24 * 60 * 60_000L)
+
+        assertEquals(sleepingReads, h.clock.elapsedReads)
+        assertEquals(live, h.prober.live.size)
+        assertEquals(pools, h.prober.poolRequests.size)
+        h.alive(d1)
+        h.brain.onScreenChanged(true)
+        runCurrent()
+        h.assertOn(d1)
+        assertEquals(live + 1, h.prober.live.size)
     }
 
     @Test

@@ -53,9 +53,15 @@ import moe.desupon.model.status.TrafficStatus
 const val WALL_BASE = 1_800_000_000_000L
 
 class FakeClock(private val scheduler: TestCoroutineScheduler) : Clock {
+    var elapsedReads: Int = 0
+        private set
+
     override fun nowMs(): Long = WALL_BASE + scheduler.currentTime
 
-    override fun elapsedMs(): Long = scheduler.currentTime
+    override fun elapsedMs(): Long {
+        elapsedReads++
+        return scheduler.currentTime
+    }
 }
 
 /** Synthetic nodes only; credentials are fake. */

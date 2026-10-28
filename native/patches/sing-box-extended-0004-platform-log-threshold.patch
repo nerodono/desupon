@@ -1,0 +1,47 @@
+diff --git a/log/platform.go b/log/platform.go
+--- a/log/platform.go
++++ b/log/platform.go
+@@ -1,4 +1,22 @@
+ package log
++
++import "sync/atomic"
++
++var platformLogLevel atomic.Uint32
++
++func init() {
++	platformLogLevel.Store(uint32(LevelNotice))
++}
++
++// SetPlatformLogLevel limits platform diagnostics before formatting, independently of console output.
++// The process-wide setting survives service reloads and can change while connections are logging.
++func SetPlatformLogLevel(level Level) {
++	platformLogLevel.Store(uint32(level))
++}
++
++func platformLevelEnabled(level Level) bool {
++	return uint32(level) <= platformLogLevel.Load()
++}
+ 
+ type PlatformWriter interface {
+ 	WriteMessage(level Level, message string)
+diff --git a/log/observable.go b/log/observable.go
+--- a/log/observable.go
++++ b/log/observable.go
+@@ -161,7 +161,7 @@
+ 		f.subscriber.Emit(Entry{level, f.formatter.FormatSimple(ctx, tag, message)})
+ 	}
+ 	platformWriters := f.loadPlatformWriters()
+-	if len(platformWriters) > 0 {
++	if len(platformWriters) > 0 && platformLevelEnabled(level) {
+ 		platformMessage := f.platformFormatter.Format(ctx, level, tag, message, timestamp)
+ 		for _, platformWriter := range platformWriters {
+ 			platformWriter.WriteMessage(level, platformMessage)
+@@ -179,7 +179,7 @@
+ func (l *observableLogger) Log(ctx context.Context, level Level, args []any) {
+ 	level = OverrideLevelFromContext(level, ctx)
+ 	platformWriters := l.loadPlatformWriters()
+-	if level > l.level && len(platformWriters) == 0 && !l.needObservable {
++	if level > l.level && (len(platformWriters) == 0 || !platformLevelEnabled(level)) && !l.needObservable {
+ 		return
+ 	}
+ 	nowTime := time.Now()

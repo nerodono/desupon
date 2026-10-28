@@ -22,10 +22,6 @@ import (
 	"github.com/sagernet/sing-box/experimental/libbox"
 	"github.com/sagernet/sing-box/include"
 	"github.com/sagernet/sing-box/option"
-	mux "github.com/sagernet/sing-mux"
-	qtls "github.com/sagernet/sing-quic"
-	snell "github.com/sagernet/sing-snell"
-	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	sjson "github.com/sagernet/sing/common/json"
 	M "github.com/sagernet/sing/common/metadata"
@@ -348,7 +344,7 @@ func ThroughputOutbound(server *libbox.CommandServer, tag, url string, maxBytes,
 }
 
 func throughputHTTP(parent context.Context, dialer N.Dialer, url string, limit int64, timeout time.Duration) *ThroughputResult {
-	ctx, cancel := context.WithTimeout(warmContext(parent, dialer), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	transport := newProbeTransport(dialer, nil)
 	defer transport.CloseIdleConnections()
@@ -373,17 +369,6 @@ func throughputHTTP(parent context.Context, dialer N.Dialer, url string, limit i
 	return r
 }
 
-// warmContext keeps a multiplexed or QUIC session open across connections, so a second request does not pay its handshake again.
-func warmContext(ctx context.Context, dialer N.Dialer) context.Context {
-	if m, ok := common.Cast[adapter.OutboundWithMultiplex](dialer); !ok || !m.MultiplexEnabled() {
-		return ctx
-	}
-	ctx = adapter.ContextWithKeepSession(ctx)
-	ctx = mux.ContextWithKeepSession(ctx)
-	ctx = qtls.ContextWithKeepSession(ctx)
-	return snell.ContextWithKeepSession(ctx)
-}
-
 func newProbeTransport(dialer N.Dialer, dialed *atomic.Bool) *http.Transport {
 	return &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -404,8 +389,10 @@ var probeRootPool *x509.CertPool
 
 // probeHTTP measures in stages over one kept connection: connect, a first request, then a warm second one.
 // A failed second request still passes, with the first request's time and Warm unset.
+// HTTP keepalive supplies the warm request; a KeepSession context would leave an unselected proxy's
+// idle transport alive after the probe closes, including its periodic QUIC keepalives.
 func probeHTTP(parent context.Context, dialer N.Dialer, url string, timeout time.Duration) probeNodeResult {
-	ctx, cancel := context.WithTimeout(warmContext(parent, dialer), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	var dialed, tlsDone atomic.Bool
 	transport := newProbeTransport(dialer, &dialed)

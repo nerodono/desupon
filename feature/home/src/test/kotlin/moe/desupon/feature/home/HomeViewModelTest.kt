@@ -195,26 +195,45 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun cadenceProbesEvery15sAndAtOnceWhenTheSheetOpens() = runTest {
+    fun cadenceProbesOnlyWhileTheSheetIsOpen() = runTest {
         val vm = vm()
         val times = mutableListOf<Long>()
         vpn.onProbe = { times += currentTime }
         val cadence = backgroundScope.launch { vm.runProbeCadence() }
         runCurrent()
         advanceTimeBy(31_000)
-        assertEquals(listOf(0L, 15_000L, 30_000L), times)
+        assertTrue(times.isEmpty())
 
         vm.setSheetOpen(true)
         runCurrent()
         advanceTimeBy(16_000)
         vm.setSheetOpen(false)
-        advanceTimeBy(15_000)
-        assertEquals(listOf(0L, 15_000L, 30_000L, 31_000L, 46_000L, 61_000L), times)
+        advanceTimeBy(60_000)
+        assertEquals(listOf(31_000L, 46_000L), times)
+
+        vm.setSheetOpen(true)
+        runCurrent()
+        assertEquals(listOf(31_000L, 46_000L, 107_000L), times)
 
         cadence.cancel()
         advanceTimeBy(60_000)
-        assertEquals(6, times.size)
+        assertEquals(3, times.size)
         assertTrue(vpn.probeRequests.none { it })
+    }
+
+    @Test
+    fun cadenceImmediatelyProbesAnAlreadyOpenSheetOnResume() = runTest {
+        val vm = vm()
+        vm.setSheetOpen(true)
+        val cadence = backgroundScope.launch { vm.runProbeCadence() }
+        runCurrent()
+        assertEquals(listOf(false), vpn.probeRequests)
+        cadence.cancel()
+        advanceTimeBy(60_000)
+        assertEquals(listOf(false), vpn.probeRequests)
+        backgroundScope.launch { vm.runProbeCadence() }
+        runCurrent()
+        assertEquals(listOf(false, false), vpn.probeRequests)
     }
 
     @Test
@@ -224,6 +243,7 @@ class HomeViewModelTest {
         vpn.onProbe = { times += currentTime }
         vpn.probeResult = ProbeRequestResult.Throttled(retryInMs = 4_000)
         vm.events.test {
+            vm.setSheetOpen(true)
             backgroundScope.launch { vm.runProbeCadence() }
             runCurrent()
             vpn.probeResult = ProbeRequestResult.Done(3)

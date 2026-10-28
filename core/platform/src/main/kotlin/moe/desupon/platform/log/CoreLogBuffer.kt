@@ -32,6 +32,7 @@ class CoreLogBuffer(
     scope: CoroutineScope,
     private val clock: () -> Long = System::currentTimeMillis,
     private val capacity: Int = CAPACITY,
+    private val setSourceLevel: (CoreLogLevel) -> Unit = {},
 ) {
     private val lines = ArrayDeque<LogLine>()
     private var seq = 0L
@@ -46,7 +47,12 @@ class CoreLogBuffer(
     val version: StateFlow<Long> = _version.asStateFlow()
 
     init {
-        scope.launch { threshold.collect { keep = it } }
+        scope.launch {
+            threshold.collect {
+                keep = it
+                setSourceLevel(it)
+            }
+        }
         scope.launch { source.collect(::append) }
         sessions(::onAttach)
     }

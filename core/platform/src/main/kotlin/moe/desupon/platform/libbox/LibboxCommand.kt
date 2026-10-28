@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -147,21 +149,25 @@ class LibboxCommand internal constructor(
     private val _logs = MutableSharedFlow<CoreLogEntry>(extraBufferCapacity = LOG_BUFFER, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     private val _defaultLogLevel = MutableStateFlow(CoreLogLevel.INFO)
 
-    override val groups: Flow<List<GroupInfo>> = _groups.asStateFlow()
-    override val status: Flow<TrafficStatus> = _status.asStateFlow()
+    override val groups: Flow<List<GroupInfo>> = observed(_groups)
+    override val status: Flow<TrafficStatus> = observed(_status)
 
     /** Connections whose chain passes the `proxy` selector; direct traffic is left out. */
-    override val connections: Flow<List<ConnInfo>> = _allConnections.map { it.proxied() }
+    override val connections: Flow<List<ConnInfo>> = observed(_allConnections).map { it.proxied() }
 
     /** Proxied traffic per final outbound. */
-    val proxyTraffic: Flow<Map<String, OutboundTraffic>> = _allConnections.map { it.trafficByOutbound() }
+    val proxyTraffic: Flow<Map<String, OutboundTraffic>> = observed(_allConnections).map { it.trafficByOutbound() }
 
     val logs: SharedFlow<CoreLogEntry> = _logs.asSharedFlow()
     val defaultLogLevel: StateFlow<CoreLogLevel> = _defaultLogLevel.asStateFlow()
 
     private val table = ConnectionTable()
 
-    // Status, group and connection streams belong to one box and are reopened with every reload.
+    // Guarded by streams. The native streams poll every second even when their StateFlows have no collectors.
+    private var serviceRunning = false
+    private var streamReaders = 0
+
+    // Status, group and connection streams belong to one box and run only while someone consumes them.
     private val streams = Link(logs = false) { generation -> StreamHandler(generation) }
 
     // The log stream belongs to the command server, so it stays open across reloads until the server goes.
@@ -177,14 +183,17 @@ class LibboxCommand internal constructor(
         }
     }
 
-    /** Returns once the streams of the new service are open, or after [dialWaitMs] without them. */
+    /** Returns once any requested streams of the new service are open, or after [dialWaitMs] without them. */
     override suspend fun reload(configJson: String, apps: AppSplit) {
         // The old box's streams end during the reload; their callbacks are stale from here on.
-        streams.close()
+        disconnectClient()
         onCore { core.startOrReload(configJson, PackageOverrides.of(apps, ownPackage)) }
         openLogs()
-        val dial = streams.open()
-        withTimeoutOrNull(dialWaitMs) { dial.join() }
+        val dial = synchronized(streams) {
+            serviceRunning = true
+            if (streamReaders > 0) streams.open() else null
+        }
+        if (dial != null) withTimeoutOrNull(dialWaitMs) { dial.join() }
     }
 
     override suspend fun select(group: String, tag: String) = onCore { core.select(group, tag) }
@@ -227,7 +236,29 @@ class LibboxCommand internal constructor(
         }
     }
 
-    private fun disconnectClient() {
+    /** Closing the last reader stops native polling as well as Kotlin collection, including while the screen is off. */
+    private fun <T> observed(source: Flow<T>): Flow<T> = flow {
+        try {
+            synchronized(streams) {
+                streamReaders++
+                if (serviceRunning && !streams.isOpen) streams.open()
+            }
+            emitAll(source)
+        } finally {
+            synchronized(streams) {
+                streamReaders--
+                if (streamReaders == 0) clearStreams()
+            }
+        }
+    }
+
+    private fun disconnectClient() = synchronized(streams) {
+        serviceRunning = false
+        clearStreams()
+    }
+
+    /** Called under streams; reopening receives fresh status and a full connection snapshot from the core. */
+    private fun clearStreams() {
         streams.close()
         _groups.value = emptyList()
         _status.value = TrafficStatus(0, 0, 0, 0, 0, 0)
@@ -292,7 +323,14 @@ class LibboxCommand internal constructor(
             while (true) {
                 if (wait > 0) delay(wait)
                 if (!isCurrent(generation)) return
-                if (runCatching { c.connect() }.isSuccess) return
+                val connected = runCatching { c.connect() }
+                // A close can win between the generation check and this blocking native call. Disconnect again
+                // after it returns so a retired client cannot leave polling streams running without readers.
+                if (!isCurrent(generation)) {
+                    runCatching { c.disconnect() }
+                    return
+                }
+                if (connected.isSuccess) return
                 wait = (wait * 2).coerceIn(RETRY_BASE_MS, RETRY_MAX_MS)
             }
         }
@@ -355,7 +393,7 @@ class LibboxCommand internal constructor(
 
         override fun writeStatus(message: StatusMessage?) {
             if (message == null || !current()) return
-            _status.value = TrafficStatus(
+            val status = TrafficStatus(
                 uplinkRate = message.uplink,
                 downlinkRate = message.downlink,
                 uplinkTotal = message.uplinkTotal,
@@ -363,6 +401,9 @@ class LibboxCommand internal constructor(
                 connectionsIn = message.connectionsIn,
                 connectionsOut = message.connectionsOut,
             )
+            synchronized(streams) {
+                if (current()) _status.value = status
+            }
         }
 
         override fun writeGroups(message: OutboundGroupIterator?) {
@@ -378,7 +419,9 @@ class LibboxCommand internal constructor(
                     items = g.items.toGroupItems(),
                 )
             }
-            _groups.value = out
+            synchronized(streams) {
+                if (current()) _groups.value = out
+            }
         }
 
         override fun writeOutbounds(message: OutboundGroupItemIterator?) {}
@@ -400,8 +443,11 @@ class LibboxCommand internal constructor(
                     else -> continue
                 }
             }
-            synchronized(table) {
-                _allConnections.value = table.apply(events.reset, converted, System.currentTimeMillis())
+            synchronized(streams) {
+                if (!current()) return
+                synchronized(table) {
+                    _allConnections.value = table.apply(events.reset, converted, System.currentTimeMillis())
+                }
             }
         }
     }

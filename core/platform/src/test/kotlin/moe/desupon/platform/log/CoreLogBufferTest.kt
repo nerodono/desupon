@@ -17,6 +17,7 @@ class CoreLogBufferTest {
     private val threshold = MutableStateFlow(CoreLogBuffer.DEFAULT_THRESHOLD)
     private var attachListener: ((Boolean) -> Unit)? = null
     private var now = 1_000L
+    private val sourceLevels = mutableListOf<CoreLogLevel>()
 
     private fun TestScope.buffer(capacity: Int = CoreLogBuffer.CAPACITY) = CoreLogBuffer(
         source = source,
@@ -25,6 +26,7 @@ class CoreLogBufferTest {
         scope = CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         clock = { now },
         capacity = capacity,
+        setSourceLevel = sourceLevels::add,
     )
 
     private fun CoreLogBuffer.texts() = snapshot().map {
@@ -46,6 +48,15 @@ class CoreLogBufferTest {
         source.emit(CoreLogEntry(CoreLogLevel.DEBUG, "d"))
         source.emit(CoreLogEntry(CoreLogLevel.TRACE, "t"))
         assertEquals(listOf("ERROR e", "NOTICE sing-box started", "DEBUG d"), b.texts())
+    }
+
+    @Test
+    fun appliesInitialAndChangedVerbosityToTheSource() = runTest {
+        threshold.value = CoreLogLevel.DEBUG
+        buffer()
+        threshold.value = CoreLogLevel.ERROR
+        threshold.value = CoreLogLevel.TRACE
+        assertEquals(listOf(CoreLogLevel.DEBUG, CoreLogLevel.ERROR, CoreLogLevel.TRACE), sourceLevels)
     }
 
     @Test

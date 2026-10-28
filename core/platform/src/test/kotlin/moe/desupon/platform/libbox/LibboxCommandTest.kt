@@ -1,7 +1,11 @@
 package moe.desupon.platform.libbox
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -13,6 +17,7 @@ import moe.desupon.platform.log.CoreLogLevel
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -76,8 +81,95 @@ class LibboxCommandTest {
     }
 
     private val core = FakeGateway()
+    private val readers = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
 
-    private fun command(dialWaitMs: Long = 3_000) = LibboxCommand(core, "moe.desupon.app", Dispatchers.IO, dialWaitMs)
+    @AfterTest
+    fun closeReaders() = readers.cancel()
+
+    private fun command(dialWaitMs: Long = 3_000, observe: Boolean = true) =
+        LibboxCommand(core, "moe.desupon.app", Dispatchers.IO, dialWaitMs).also { cmd ->
+            if (observe) readers.launch(start = CoroutineStart.UNDISPATCHED) { cmd.status.collect {} }
+        }
+
+    private suspend fun awaitCall(call: String, count: Int = 1) {
+        kotlinx.coroutines.withTimeout(5_000) {
+            while (core.calls.count { it == call } < count) delay(10)
+        }
+    }
+
+    @Test
+    fun noNativePollingWithoutReadersAndControlStillWorks() = runBlocking<Unit> {
+        val cmd = command(observe = false)
+        cmd.reload("{}", AppSplit())
+        cmd.select("proxy", "node")
+        assertEquals(0, core.handlers.count { !it.first })
+        assertTrue("select:proxy/node" in core.calls)
+        assertEquals(1, core.logClients().size, "diagnostics remain available")
+        cmd.stop()
+    }
+
+    @Test
+    fun readersShareStreamsAndLastReaderStopsNativePolling() = runBlocking<Unit> {
+        val cmd = command(observe = false)
+        cmd.reload("{}", AppSplit())
+        val status = readers.launch { cmd.status.collect {} }
+        awaitCall("connected")
+        val connections = readers.launch { cmd.connections.collect {} }
+        val groups = readers.launch { cmd.groups.collect {} }
+        assertEquals(1, core.handlers.count { !it.first })
+        status.cancel()
+        connections.cancel()
+        assertFalse("disconnect" in core.calls)
+        val stale = core.handlers.last { !it.first }.second
+        groups.cancel()
+        awaitCall("disconnect")
+        stale.disconnected("screen off")
+        delay(600)
+        assertEquals(1, core.handlers.count { !it.first }, "a suspended stream must not redial")
+
+        val resumed = readers.launch { cmd.connections.collect {} }
+        awaitCall("connected", 2)
+        assertEquals(2, core.handlers.count { !it.first }, "screen on opens a fresh stream and snapshot")
+        cmd.stop()
+        awaitCall("disconnect", 2)
+        resumed.cancel()
+    }
+
+    @Test
+    fun readersCannotReopenStoppedCoreButResumeAfterReload() = runBlocking<Unit> {
+        val cmd = command(observe = false)
+        cmd.reload("{}", AppSplit())
+        val status = readers.launch { cmd.status.collect {} }
+        awaitCall("connected")
+        cmd.stop()
+        awaitCall("disconnect")
+        val connections = readers.launch { cmd.connections.collect {} }
+        assertEquals(1, core.handlers.count { !it.first })
+        cmd.reload("{}", AppSplit())
+        assertEquals(2, core.handlers.count { !it.first })
+        status.cancel()
+        connections.cancel()
+        awaitCall("disconnect", 2)
+        cmd.reload("{}", AppSplit())
+        assertEquals(2, core.handlers.count { !it.first }, "reload without readers leaves polling stopped")
+        cmd.stop()
+    }
+
+    @Test
+    fun aDialFinishingAfterTheLastReaderLeavesIsDisconnectedAgain() = runBlocking<Unit> {
+        core.connectGate = CountDownLatch(1)
+        val cmd = command(observe = false)
+        cmd.reload("{}", AppSplit())
+        val status = readers.launch { cmd.status.collect {} }
+        awaitCall("connect")
+        status.cancel()
+        awaitCall("disconnect")
+        core.connectGate.countDown()
+        awaitCall("connected")
+        awaitCall("disconnect", 2)
+        assertEquals(1, core.handlers.count { !it.first }, "retiring a blocked dial must not redial")
+        cmd.stop()
+    }
 
     @Test
     fun reloadReturnsOnlyOnceTheClientDialed() = runBlocking<Unit> {

@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -152,10 +151,9 @@ class HomeViewModel(
         sheetOpen.value = open
     }
 
-    /** Run while Home is visible: probes at once and every auto interval, and again at once whenever the sheet opens. */
+    /** Collect while Home is visible; automatic probes run only while their results are shown in the location sheet. */
     suspend fun runProbeCadence() {
-        val opens = sheetOpen.drop(1).filter { it }.map { }
-        probeCadence(opens) {
+        probeCadence(sheetOpen) {
             when (val r = vpn.requestProbe(forced = false)) {
                 is ProbeRequestResult.Throttled -> r.retryInMs.coerceAtLeast(MIN_RETRY_MS)
                 else -> PoolProbes.AUTO_INTERVAL_MS

@@ -32,6 +32,7 @@ val platformModule = module {
             sessions = get<CoreRuntime>()::onAttachChanged,
             threshold = getOrNull<CoreLogThreshold>()?.levels() ?: flowOf(CoreLogBuffer.DEFAULT_THRESHOLD),
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            setSourceLevel = get<CoreRuntime>()::setLogLevel,
         )
     }
     single<Prober> { BridgeProber(androidContext(), get(), get()) }
