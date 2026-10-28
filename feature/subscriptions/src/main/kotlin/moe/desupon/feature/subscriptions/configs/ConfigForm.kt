@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import moe.desupon.feature.subscriptions.R
 import moe.desupon.feature.subscriptions.UiText
+import moe.desupon.model.node.AmneziaRules
 import moe.desupon.model.node.Capability
 import moe.desupon.parser.ConfigParser
 import moe.desupon.parser.ConfigRead
@@ -22,6 +23,25 @@ internal enum class FormProtocol(val type: String) {
     SHADOWSOCKS("shadowsocks"),
     HYSTERIA2("hysteria2"),
     TUIC("tuic"),
+    AMNEZIAWG("wireguard"),
+    WIREGUARD("wireguard"),
+    HYSTERIA("hysteria"),
+    JUICITY("juicity"),
+    ANYTLS("anytls"),
+    SOCKS("socks"),
+    HTTP("http"),
+    ;
+
+    val isWireGuard: Boolean get() = type == "wireguard"
+
+    companion object {
+        /** A wireguard outbound with AmneziaWG settings is [AMNEZIAWG]. */
+        fun of(outbound: JsonObject): FormProtocol? {
+            val type = outbound.text("type")
+            if (type == "wireguard") return if (outbound.obj("amnezia").isNullOrEmpty()) WIREGUARD else AMNEZIAWG
+            return entries.firstOrNull { it.type == type }
+        }
+    }
 }
 
 internal enum class FieldKind { TEXT, NUMBER, CHOICE, SWITCH }
@@ -61,6 +81,30 @@ internal enum class Field(val kind: FieldKind) {
     CONGESTION(FieldKind.CHOICE),
     UDP_RELAY(FieldKind.CHOICE),
     ZERO_RTT(FieldKind.SWITCH),
+    USERNAME(FieldKind.TEXT),
+    PIN_SHA256(FieldKind.TEXT),
+    PRIVATE_KEY(FieldKind.TEXT),
+    ADDRESS(FieldKind.TEXT),
+    PUBLIC_KEY(FieldKind.TEXT),
+    PRESHARED_KEY(FieldKind.TEXT),
+    ALLOWED_IPS(FieldKind.TEXT),
+    MTU(FieldKind.NUMBER),
+    JC(FieldKind.NUMBER),
+    JMIN(FieldKind.NUMBER),
+    JMAX(FieldKind.NUMBER),
+    S1(FieldKind.NUMBER),
+    S2(FieldKind.NUMBER),
+    S3(FieldKind.NUMBER),
+    S4(FieldKind.NUMBER),
+    H1(FieldKind.TEXT),
+    H2(FieldKind.TEXT),
+    H3(FieldKind.TEXT),
+    H4(FieldKind.TEXT),
+    I1(FieldKind.TEXT),
+    I2(FieldKind.TEXT),
+    I3(FieldKind.TEXT),
+    I4(FieldKind.TEXT),
+    I5(FieldKind.TEXT),
 }
 
 /**
@@ -135,6 +179,42 @@ internal data class ConfigForm(
                 add(Field.ZERO_RTT)
                 addAll(listOf(Field.SNI, Field.ALPN, Field.INSECURE))
             }
+            FormProtocol.WIREGUARD, FormProtocol.AMNEZIAWG -> {
+                addAll(listOf(Field.PRIVATE_KEY, Field.ADDRESS, Field.PUBLIC_KEY, Field.PRESHARED_KEY, Field.ALLOWED_IPS, Field.MTU))
+                if (protocol == FormProtocol.AMNEZIAWG) addAll(AWG_FIELDS)
+            }
+            FormProtocol.HYSTERIA -> {
+                add(Field.PASSWORD)
+                add(Field.HOP_PORTS)
+                if (this@ConfigForm[Field.HOP_PORTS].isNotBlank()) add(Field.HOP_INTERVAL)
+                add(Field.UP_MBPS)
+                add(Field.DOWN_MBPS)
+                add(Field.OBFS_PASSWORD)
+                addAll(listOf(Field.SNI, Field.ALPN, Field.INSECURE))
+            }
+            FormProtocol.JUICITY -> {
+                add(Field.UUID)
+                add(Field.PASSWORD)
+                add(Field.CONGESTION)
+                add(Field.PIN_SHA256)
+                add(Field.SNI)
+                add(Field.ALPN)
+                // A pinned chain replaces CA verification, so there is nothing left to skip.
+                if (this@ConfigForm[Field.PIN_SHA256].isBlank()) add(Field.INSECURE)
+            }
+            FormProtocol.ANYTLS -> {
+                add(Field.PASSWORD)
+                addAll(listOf(Field.SNI, Field.FINGERPRINT, Field.ALPN, Field.INSECURE))
+            }
+            FormProtocol.SOCKS -> {
+                add(Field.USERNAME)
+                add(Field.PASSWORD)
+            }
+            FormProtocol.HTTP -> {
+                add(Field.USERNAME)
+                add(Field.PASSWORD)
+                addAll(securityFields())
+            }
         }
     }
 
@@ -159,7 +239,7 @@ internal data class ConfigForm(
             Field.VMESS_SECURITY -> listOf("auto", "none", "zero", "aes-128-gcm", "chacha20-poly1305", "aes-128-cfb")
             Field.METHOD -> SS_METHODS
             Field.PLUGIN -> listOf("", "obfs-local", "v2ray-plugin")
-            Field.SECURITY -> listOf(NONE, TLS, REALITY)
+            Field.SECURITY -> if (protocol == FormProtocol.HTTP) listOf(NONE, TLS) else listOf(NONE, TLS, REALITY)
             Field.FINGERPRINT -> listOf("", "chrome", "firefox", "safari", "edge", "ios", "android", "random", "randomized")
             Field.TRANSPORT -> TRANSPORTS
             Field.XHTTP_MODE -> listOf("auto", "packet-up", "stream-up", "stream-one")
@@ -183,6 +263,10 @@ internal data class ConfigForm(
         if (Field.GECKO_MAX in shown && Field.GECKO_MIN !in out && Field.GECKO_MAX !in out) {
             FieldRules.geckoRange(this)?.let { (field, error) -> out[field] = error }
         }
+        if (protocol == FormProtocol.AMNEZIAWG) {
+            if (listOf(Field.JC, Field.JMIN, Field.JMAX).none { it in out }) FieldRules.junk(this)?.let { out[Field.JMAX] = it }
+            if (HEADERS.none { it in out }) FieldRules.headers(this)?.let { (field, error) -> out[field] = error }
+        }
         return copy(errors = out)
     }
 
@@ -195,8 +279,11 @@ internal data class ConfigForm(
     fun toOutbound(): JsonObject {
         val o = LinkedHashMap<String, JsonElement>(base)
         o["type"] = JsonPrimitive(protocol.type)
-        o.text("server", this[Field.SERVER])
-        o.number("server_port", this[Field.PORT])
+        // WireGuard keeps its endpoint in the peer.
+        if (!protocol.isWireGuard) {
+            o.text("server", this[Field.SERVER])
+            o.number("server_port", this[Field.PORT])
+        }
         when (protocol) {
             FormProtocol.VLESS -> {
                 o.text("uuid", this[Field.UUID])
@@ -224,9 +311,7 @@ internal data class ConfigForm(
             }
             FormProtocol.HYSTERIA2 -> {
                 o.raw("password", this[Field.PASSWORD])
-                val hops = Ports.ranges(this[Field.HOP_PORTS]).orEmpty()
-                o.list("server_ports", hops)
-                if (hops.isNotEmpty()) o.text("hop_interval", this[Field.HOP_INTERVAL])
+                writeHops(o)
                 o.number("up_mbps", this[Field.UP_MBPS])
                 o.number("down_mbps", this[Field.DOWN_MBPS])
                 writeObfs(o)
@@ -240,23 +325,60 @@ internal data class ConfigForm(
                 o.flag("zero_rtt_handshake", isOn(Field.ZERO_RTT))
                 writeQuicTls(o)
             }
+            FormProtocol.WIREGUARD, FormProtocol.AMNEZIAWG -> writeWireGuard(o)
+            FormProtocol.HYSTERIA -> {
+                o.raw("auth_str", this[Field.PASSWORD])
+                writeHops(o)
+                o.number("up_mbps", this[Field.UP_MBPS])
+                o.number("down_mbps", this[Field.DOWN_MBPS])
+                o.raw("obfs", this[Field.OBFS_PASSWORD])
+                writeQuicTls(o)
+            }
+            FormProtocol.JUICITY -> {
+                o.text("uuid", this[Field.UUID])
+                o.raw("password", this[Field.PASSWORD])
+                o.text("congestion_control", this[Field.CONGESTION])
+                o.text("pinned_certchain_sha256", this[Field.PIN_SHA256])
+                writeQuicTls(o)
+            }
+            FormProtocol.ANYTLS -> {
+                o.raw("password", this[Field.PASSWORD])
+                o["tls"] = tls(base.obj("tls"))
+            }
+            FormProtocol.SOCKS -> {
+                o.text("username", this[Field.USERNAME])
+                o.raw("password", this[Field.PASSWORD])
+            }
+            FormProtocol.HTTP -> {
+                o.text("username", this[Field.USERNAME])
+                o.raw("password", this[Field.PASSWORD])
+                writeSecurity(o)
+            }
         }
         return JsonObject(o)
+    }
+
+    private fun writeHops(o: MutableMap<String, JsonElement>) {
+        val hops = Ports.ranges(this[Field.HOP_PORTS]).orEmpty()
+        o.list("server_ports", hops)
+        if (hops.isNotEmpty()) o.text("hop_interval", this[Field.HOP_INTERVAL])
+    }
+
+    private fun tls(old: JsonObject?): JsonObject {
+        val t = LinkedHashMap<String, JsonElement>(old ?: emptyMap())
+        t.remove("reality")
+        t["enabled"] = JsonPrimitive(true)
+        t.text("server_name", this[Field.SNI])
+        t.flag("insecure", isOn(Field.INSECURE))
+        t.list("alpn", splitList(this[Field.ALPN]))
+        t.utls(old, this[Field.FINGERPRINT])
+        return JsonObject(t)
     }
 
     private fun writeSecurity(o: MutableMap<String, JsonElement>) {
         val old = base.obj("tls")
         when (this[Field.SECURITY]) {
-            TLS -> {
-                val t = LinkedHashMap<String, JsonElement>(old ?: emptyMap())
-                t.remove("reality")
-                t["enabled"] = JsonPrimitive(true)
-                t.text("server_name", this[Field.SNI])
-                t.flag("insecure", isOn(Field.INSECURE))
-                t.list("alpn", splitList(this[Field.ALPN]))
-                t.utls(old, this[Field.FINGERPRINT])
-                o["tls"] = JsonObject(t)
-            }
+            TLS -> o["tls"] = tls(old)
             REALITY -> {
                 val t = LinkedHashMap<String, JsonElement>(old ?: emptyMap())
                 t.remove("insecure")
@@ -328,9 +450,34 @@ internal data class ConfigForm(
         val t = LinkedHashMap<String, JsonElement>(base.obj("tls") ?: emptyMap())
         t["enabled"] = JsonPrimitive(true)
         t.text("server_name", this[Field.SNI])
-        t.flag("insecure", isOn(Field.INSECURE))
+        t.flag("insecure", isOn(Field.INSECURE) && Field.INSECURE in fields())
         t.list("alpn", splitList(this[Field.ALPN]))
         o["tls"] = JsonObject(t)
+    }
+
+    private fun writeWireGuard(o: MutableMap<String, JsonElement>) {
+        o.number("mtu", this[Field.MTU])
+        o.list("address", Cidr.list(this[Field.ADDRESS]).orEmpty())
+        o.text("private_key", this[Field.PRIVATE_KEY])
+        val p = LinkedHashMap<String, JsonElement>(base.peer() ?: emptyMap())
+        p.text("address", this[Field.SERVER])
+        p.number("port", this[Field.PORT])
+        p.text("public_key", this[Field.PUBLIC_KEY])
+        p.text("pre_shared_key", this[Field.PRESHARED_KEY])
+        p.list("allowed_ips", Cidr.list(this[Field.ALLOWED_IPS]).orEmpty())
+        o["peers"] = JsonArray(listOf(JsonObject(p)))
+        if (protocol != FormProtocol.AMNEZIAWG) {
+            o.remove("amnezia")
+            return
+        }
+        val a = LinkedHashMap<String, JsonElement>(base.obj("amnezia") ?: emptyMap())
+        for ((field, key) in AWG_KEYS) {
+            when (field.kind) {
+                FieldKind.NUMBER -> a.number(key, this[field])
+                else -> a.text(key, if (field in HEADERS) FieldRules.headerRange(this[field])?.let(AmneziaRules::canonical) ?: this[field] else this[field])
+            }
+        }
+        if (a.isEmpty()) o.remove("amnezia") else o["amnezia"] = JsonObject(a)
     }
 
     companion object {
@@ -346,13 +493,24 @@ internal data class ConfigForm(
             "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305",
             "aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305", "xchacha20-ietf-poly1305", "none",
         )
+        val HEADERS = listOf(Field.H1, Field.H2, Field.H3, Field.H4)
+
+        /** AmneziaWG fields in form order, with their `amnezia` keys. */
+        val AWG_KEYS = listOf(
+            Field.JC to "jc", Field.JMIN to "jmin", Field.JMAX to "jmax",
+            Field.S1 to "s1", Field.S2 to "s2", Field.S3 to "s3", Field.S4 to "s4",
+            Field.H1 to "h1", Field.H2 to "h2", Field.H3 to "h3", Field.H4 to "h4",
+            Field.I1 to "i1", Field.I2 to "i2", Field.I3 to "i3", Field.I4 to "i4", Field.I5 to "i5",
+        )
+        val AWG_FIELDS = AWG_KEYS.map { it.first }
+        const val ALL_TRAFFIC = "0.0.0.0/0, ::/0"
 
         /** Null when [read] is not a single runnable node of a [FormProtocol] whose settings the form can all show. */
         fun from(read: ConfigRead): ConfigForm? {
             val node = read.nodes.singleOrNull()?.takeIf { it.capability == Capability.SUPPORTED } ?: return null
             val o = runCatching { Json.parseToJsonElement(node.outboundJson.raw()).jsonObject }.getOrNull() ?: return null
             if ("chain" in o || "detour" in o) return null
-            val protocol = FormProtocol.entries.firstOrNull { it.type == o.text("type") } ?: return null
+            val protocol = FormProtocol.of(o) ?: return null
             val values = read(protocol, o) ?: return null
             val name = node.displayName.takeUnless { it == Endpoint.of(node.outboundJson.raw()) }.orEmpty()
             return ConfigForm(protocol, name, o, values)
@@ -381,7 +539,26 @@ internal data class ConfigForm(
                         put(Field.PORT, "8388")
                         put(Field.METHOD, "2022-blake3-aes-128-gcm")
                     }
-                    FormProtocol.HYSTERIA2, FormProtocol.TUIC -> Unit
+                    FormProtocol.WIREGUARD, FormProtocol.AMNEZIAWG -> {
+                        put(Field.PORT, "51820")
+                        put(Field.ALLOWED_IPS, ALL_TRAFFIC)
+                        // Junk packets are client-side only, so these need not match the server.
+                        if (protocol == FormProtocol.AMNEZIAWG) {
+                            put(Field.JC, "4")
+                            put(Field.JMIN, "40")
+                            put(Field.JMAX, "70")
+                        }
+                    }
+                    FormProtocol.HYSTERIA -> {
+                        put(Field.UP_MBPS, "10")
+                        put(Field.DOWN_MBPS, "50")
+                    }
+                    FormProtocol.SOCKS -> put(Field.PORT, "1080")
+                    FormProtocol.HTTP -> {
+                        put(Field.PORT, "8080")
+                        put(Field.SECURITY, NONE)
+                    }
+                    FormProtocol.HYSTERIA2, FormProtocol.TUIC, FormProtocol.JUICITY, FormProtocol.ANYTLS -> Unit
                 }
             }
             return ConfigForm(protocol, "", JsonObject(emptyMap()), values)
@@ -431,6 +608,54 @@ internal data class ConfigForm(
                     v[Field.ZERO_RTT] = if (o.text("zero_rtt_handshake") == "true") TRUE else ""
                     readQuicTls(tls, v)
                 }
+                FormProtocol.WIREGUARD, FormProtocol.AMNEZIAWG -> {
+                    val peer = (o["peers"] as? JsonArray)?.singleOrNull() as? JsonObject ?: return null
+                    v[Field.SERVER] = peer.text("address").orEmpty()
+                    v[Field.PORT] = peer.text("port").orEmpty()
+                    v[Field.PUBLIC_KEY] = peer.text("public_key").orEmpty()
+                    v[Field.PRESHARED_KEY] = peer.text("pre_shared_key").orEmpty()
+                    v[Field.ALLOWED_IPS] = peer.strings("allowed_ips").joinToString(", ")
+                    v[Field.PRIVATE_KEY] = o.text("private_key").orEmpty()
+                    v[Field.ADDRESS] = o.strings("address").joinToString(", ")
+                    v[Field.MTU] = o.text("mtu").orEmpty()
+                    val a = o.obj("amnezia")
+                    // A range written as {"from","to"} has no field here.
+                    if (a != null && AWG_KEYS.any { (_, key) -> a[key] != null && a[key] !is JsonPrimitive }) return null
+                    for ((field, key) in AWG_KEYS) v[field] = a?.text(key).orEmpty()
+                }
+                FormProtocol.HYSTERIA -> {
+                    // Byte-rate strings and base64 auth have no field here.
+                    if (listOf("up", "down", "auth").any { it in o }) return null
+                    v[Field.PASSWORD] = o.raw("auth_str")
+                    v[Field.HOP_PORTS] = Ports.show(o.strings("server_ports"))
+                    v[Field.HOP_INTERVAL] = o.text("hop_interval").orEmpty()
+                    v[Field.UP_MBPS] = o.text("up_mbps").orEmpty()
+                    v[Field.DOWN_MBPS] = o.text("down_mbps").orEmpty()
+                    v[Field.OBFS_PASSWORD] = o.raw("obfs")
+                    readQuicTls(tls, v)
+                }
+                FormProtocol.JUICITY -> {
+                    v[Field.UUID] = o.text("uuid").orEmpty()
+                    v[Field.PASSWORD] = o.raw("password")
+                    v[Field.CONGESTION] = o.text("congestion_control").orEmpty()
+                    v[Field.PIN_SHA256] = o.text("pinned_certchain_sha256").orEmpty()
+                    readQuicTls(tls, v)
+                }
+                FormProtocol.ANYTLS -> {
+                    readSecurity(tls, v)
+                    if (v[Field.SECURITY] != TLS) return null
+                    v[Field.PASSWORD] = o.raw("password")
+                }
+                FormProtocol.SOCKS, FormProtocol.HTTP -> {
+                    // The form speaks SOCKS5; 4 and 4a have no password.
+                    if (protocol == FormProtocol.SOCKS && o.text("version").let { it != null && it != "5" }) return null
+                    v[Field.USERNAME] = o.text("username").orEmpty()
+                    v[Field.PASSWORD] = o.raw("password")
+                    if (protocol == FormProtocol.HTTP) {
+                        readSecurity(tls, v)
+                        if (v[Field.SECURITY] == REALITY) return null
+                    }
+                }
             }
             return v
         }
@@ -474,7 +699,7 @@ internal data class ConfigForm(
     }
 }
 
-/** Hysteria2 hop ports: the form shows `20000-30000, 40000`, sing-box takes `["20000:30000", "40000:40000"]`. */
+/** Hysteria hop ports: the form shows `20000-30000, 40000`, sing-box takes `["20000:30000", "40000:40000"]`. */
 internal object Ports {
     /** Null when [text] is not a list of ports and ranges; empty for blank text. */
     fun ranges(text: String): List<String>? {
@@ -499,7 +724,8 @@ internal object Ports {
 
 /** Field checks; messages name what is wrong, never repeat the value. */
 internal object FieldRules {
-    private val UUID = Regex("[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}")
+    // All dashes or none: the core's UUID decoder refuses anything in between.
+    private val UUID = Regex("[0-9a-fA-F]{8}(-?)[0-9a-fA-F]{4}\\1[0-9a-fA-F]{4}\\1[0-9a-fA-F]{4}\\1[0-9a-fA-F]{12}")
     private val HEX = Regex("[0-9a-fA-F]*")
     private val DURATION_PART = Regex("([0-9]+(?:\\.[0-9]+)?)(ns|us|µs|ms|s|m|h)")
 
@@ -514,15 +740,36 @@ internal object FieldRules {
             Field.PORT -> if (value.toIntOrNull() !in 1..65535) UiText.Res(R.string.subs_form_error_port) else null
             Field.UUID -> when {
                 value.isEmpty() -> required()
-                // TUIC needs a real UUID; VLESS and VMess map any other string to one, see [warning].
-                form.protocol == FormProtocol.TUIC && !UUID.matches(value) -> UiText.Res(R.string.subs_form_error_uuid)
+                // TUIC and Juicity need a real UUID; VLESS and VMess map any other string to one, see [warning].
+                form.protocol in STRICT_UUID && !UUID.matches(value) -> UiText.Res(R.string.subs_form_error_uuid)
                 else -> null
             }
             Field.PASSWORD -> when {
-                form[field].isEmpty() -> required()
+                form[field].isEmpty() -> if (form.protocol in OPTIONAL_PASSWORD) null else required()
                 form.protocol == FormProtocol.SHADOWSOCKS -> ss2022(form[Field.METHOD], form[field])
                 else -> null
             }
+            Field.USERNAME -> if (value.isEmpty() && form[Field.PASSWORD].isNotEmpty()) required() else null
+            Field.PIN_SHA256 -> if (value.isNotEmpty() && PIN_SHAPES.none { it.matches(value) }) {
+                UiText.Res(R.string.subs_form_error_pin)
+            } else {
+                null
+            }
+            Field.PRIVATE_KEY, Field.PUBLIC_KEY, Field.PRESHARED_KEY -> when {
+                value.isEmpty() -> if (field == Field.PRESHARED_KEY) null else required()
+                Base64Key.decode(value)?.size != 32 -> UiText.Res(R.string.subs_form_error_wg_key)
+                else -> null
+            }
+            Field.ADDRESS, Field.ALLOWED_IPS -> when (Cidr.list(value)?.isEmpty()) {
+                null -> UiText.Res(R.string.subs_form_error_cidr)
+                true -> required()
+                false -> null
+            }
+            Field.MTU -> intRange(value, MIN_MTU, MAX_U16)
+            Field.JC -> intRange(value, 0, AmneziaRules.MAX_JUNK_COUNT.toInt())
+            Field.JMIN, Field.JMAX, Field.S1, Field.S2, Field.S3, Field.S4 -> intRange(value, 0, AmneziaRules.MAX_SIZE.toInt())
+            Field.H1, Field.H2, Field.H3, Field.H4 -> if (value.isNotEmpty() && headerRange(value) == null) UiText.Res(R.string.subs_form_error_awg_range) else null
+            Field.I1, Field.I2, Field.I3, Field.I4, Field.I5 -> if (!AmneziaRules.validChain(value)) UiText.Res(R.string.subs_form_error_awg_chain) else null
             Field.METHOD -> if (value.isEmpty()) required() else null
             Field.REALITY_KEY -> when {
                 value.isEmpty() -> required()
@@ -532,17 +779,47 @@ internal object FieldRules {
             Field.REALITY_SID -> if (value.length > 16 || value.length % 2 != 0 || !HEX.matches(value)) UiText.Res(R.string.subs_form_error_short_id) else null
             Field.SNI -> if (form[Field.SECURITY] == ConfigForm.REALITY && value.isEmpty()) required() else null
             Field.ALTER_ID -> if (value.isNotEmpty() && (value.toIntOrNull() ?: -1) < 0) UiText.Res(R.string.subs_form_error_alter_id) else null
-            Field.UP_MBPS, Field.DOWN_MBPS -> if (value.isNotEmpty() && (value.toIntOrNull() ?: 0) <= 0) UiText.Res(R.string.subs_form_error_number) else null
+            Field.UP_MBPS, Field.DOWN_MBPS -> when {
+                // Hysteria v1 has no bandwidth detection: the core refuses to start without both rates.
+                value.isEmpty() -> if (form.protocol == FormProtocol.HYSTERIA) required() else null
+                (value.toIntOrNull() ?: 0) <= 0 -> UiText.Res(R.string.subs_form_error_number)
+                else -> null
+            }
             Field.GECKO_MIN, Field.GECKO_MAX -> gecko(value)
             Field.HOP_PORTS -> if (Ports.ranges(value) == null) UiText.Res(R.string.subs_form_error_ports) else null
             Field.HOP_INTERVAL -> if (value.isNotEmpty() && (seconds(value) ?: 0.0) < 5.0) UiText.Res(R.string.subs_form_error_hop_interval) else null
-            Field.OBFS_PASSWORD -> if (form[field].isEmpty()) required() else null
+            Field.OBFS_PASSWORD -> if (form[field].isEmpty() && form.protocol == FormProtocol.HYSTERIA2) required() else null
             Field.PATH -> if (value.isNotEmpty() && !value.startsWith("/")) UiText.Res(R.string.subs_form_error_path) else null
             else -> null
         }
     }
 
     private fun required() = UiText.Res(R.string.subs_form_error_required)
+
+    /** Typed ranges may carry spaces, as in `100 - 200`; the form saves them without. */
+    fun headerRange(value: String): LongRange? = AmneziaRules.range(value.filterNot(Char::isWhitespace))
+
+    private fun intRange(value: String, min: Int, max: Int): UiText? =
+        if (value.isNotEmpty() && value.toIntOrNull() !in min..max) UiText.Res(R.string.subs_form_error_int_range, listOf(min, max)) else null
+
+    /** See [AmneziaRules.junkValid]; blank values count as the device's 0. */
+    fun junk(form: ConfigForm): UiText? {
+        fun n(f: Field) = form[f].trim().toLongOrNull() ?: 0L
+        return if (AmneziaRules.junkValid(n(Field.JC), n(Field.JMIN), n(Field.JMAX))) null else UiText.Res(R.string.subs_form_error_junk_range)
+    }
+
+    /** Overlapping H1-H4; the error goes on a field the user filled and names the other one. */
+    fun headers(form: ConfigForm): Pair<Field, UiText>? {
+        val ranges = ConfigForm.HEADERS.map { form[it].trim().takeIf(String::isNotEmpty)?.let(::headerRange) }
+        val (i, j) = AmneziaRules.overlap(ranges) ?: return null
+        val (at, other) = if (ranges[j] != null) j to i else i to j
+        val error = if (ranges[other] != null) {
+            UiText.Res(R.string.subs_form_error_awg_overlap, listOf(other + 1))
+        } else {
+            UiText.Res(R.string.subs_form_error_awg_overlap_default, listOf(other + 1))
+        }
+        return ConfigForm.HEADERS[at] to error
+    }
 
     private fun gecko(value: String): UiText? {
         if (value.isEmpty()) return null
@@ -567,7 +844,7 @@ internal object FieldRules {
 
     /** A VLESS or VMess id that is not a UUID works only when the server uses the same string. */
     fun warning(form: ConfigForm, field: Field): UiText? {
-        if (field != Field.UUID || form.protocol == FormProtocol.TUIC) return null
+        if (field != Field.UUID || form.protocol in STRICT_UUID) return null
         val value = form[field].trim()
         return if (value.isNotEmpty() && !UUID.matches(value)) UiText.Res(R.string.subs_form_warning_custom_id) else null
     }
@@ -603,6 +880,42 @@ internal object FieldRules {
     private const val GECKO_MAX_PACKET = 2048
     private const val GECKO_DEFAULT_MIN = 512
     private const val GECKO_DEFAULT_MAX = 1200
+    private const val MIN_MTU = 576
+    private const val MAX_U16 = 65535
+    /** The SHA-256 shapes the config rules accept for a juicity pin: base64 in either alphabet, or hex. */
+    private val PIN_SHAPES = listOf(Regex("[A-Za-z0-9+/]{43}=?"), Regex("[A-Za-z0-9_-]{43}=?"), Regex("[0-9a-fA-F]{64}"))
+    private val STRICT_UUID = setOf(FormProtocol.TUIC, FormProtocol.JUICITY)
+    private val OPTIONAL_PASSWORD = setOf(FormProtocol.HYSTERIA, FormProtocol.SOCKS, FormProtocol.HTTP)
+}
+
+/** WireGuard addresses: the form takes `10.0.0.2, fd00::2/64`, sing-box takes prefixes on every entry. */
+internal object Cidr {
+    private val V4 = Regex("(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}")
+    private val HEX4 = Regex("[0-9a-fA-F]{1,4}")
+
+    /** Null when an entry is not an IP with an optional prefix; a bare IP gets /32 or /128. */
+    fun list(text: String): List<String>? = text.split(',', ' ').map { it.trim() }.filter { it.isNotEmpty() }.map { entry ->
+        val ip = entry.substringBefore('/')
+        val v6 = ':' in ip
+        if (!(if (v6) v6(ip) else V4.matches(ip))) return null
+        val max = if (v6) 128 else 32
+        val prefix = if ('/' in entry) entry.substringAfter('/').toIntOrNull()?.takeIf { it in 0..max } ?: return null else max
+        "$ip/$prefix"
+    }
+
+    /** As strict as Go's netip, which the core decodes these with: one `::` at most, 1-4 hex digits per group, IPv4 only last. */
+    private fun v6(ip: String): Boolean {
+        val halves = ip.split("::")
+        if (halves.size > 2) return false
+        val groups = halves.map { if (it.isEmpty()) emptyList() else it.split(':') }
+        val last = groups.last().lastOrNull() ?: groups.first().lastOrNull()
+        val v4 = last != null && '.' in last && (groups.last().isNotEmpty() || halves.size == 1)
+        if (v4 && !V4.matches(last!!)) return false
+        val hex = groups.flatten().let { if (v4) it.dropLast(1) else it }
+        if (!hex.all(HEX4::matches)) return false
+        val width = hex.size + if (v4) 2 else 0
+        return if (halves.size == 2) width <= 7 else width == 8
+    }
 }
 
 /** Base64 in either alphabet, padded or not. */
@@ -621,6 +934,8 @@ private fun JsonObject.text(key: String): String? = this[key].scalar()?.trim()?.
 private fun JsonObject.raw(key: String): String = this[key].scalar().orEmpty()
 
 private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
+
+private fun JsonObject.peer(): JsonObject? = (this["peers"] as? JsonArray)?.firstOrNull() as? JsonObject
 
 private fun JsonObject.strings(key: String): List<String> = when (val v = this[key]) {
     is JsonArray -> v.mapNotNull { it.scalar()?.trim()?.takeIf(String::isNotEmpty) }

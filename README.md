@@ -77,7 +77,8 @@ When the phone wakes up, Desupon restarts only the sessions the sleep may have k
 ### 🔑 Configs
 
 - Single server configs live on their own **Configs** tab, separate from subscriptions. Add them by link, from the clipboard, by QR code from the camera or a photo, or by sharing text to Desupon.
-- Enter a config by hand with a per-protocol form (VLESS with REALITY / XHTTP, VMess, Trojan, Shadowsocks, Hysteria2, TUIC), or as a share link or sing-box JSON in a text editor with live checking.
+- Enter a config by hand with a per-protocol form covering every protocol subscriptions support (VLESS with REALITY / XHTTP, VMess, Trojan, Shadowsocks, Hysteria2, Hysteria v1, TUIC, Juicity, AnyTLS, WireGuard, AmneziaWG, SOCKS5, HTTP), or as a share link, sing-box JSON or a WireGuard / AmneziaWG `.conf` in a text editor with live checking.
+- The form checks values the core would refuse or crash on before saving, such as AmneziaWG H1–H4 ranges that overlap or Jmin above Jmax.
 - Edit saved configs the same way. Fields the form doesn't show are kept as they are.
 
 ### 🎨 Appearance

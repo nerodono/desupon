@@ -21,6 +21,11 @@ class ConfigFormTest {
     private val uuid = "11111111-2222-4333-8444-555555555555"
     private val realityKey = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32) { it.toByte() })
     private val ss16 = Base64.getEncoder().encodeToString(ByteArray(16) { 7 })
+    private val wgPrivate = Base64.getEncoder().encodeToString(ByteArray(32) { 1 })
+    private val wgPublic = Base64.getEncoder().encodeToString(ByteArray(32) { 2 })
+    private val wgPsk = Base64.getEncoder().encodeToString(ByteArray(32) { 3 })
+    private val pin = Base64.getEncoder().encodeToString(ByteArray(32) { 4 })
+    private val enc = { s: String -> java.net.URLEncoder.encode(s, "UTF-8") }
 
     /** Synthetic links on reserved example hosts, one per protocol variant the form shows. */
     private val links = mapOf(
@@ -40,6 +45,18 @@ class ConfigFormTest {
         "hy2 salamander hop" to "hysteria2://pw@hy.example.com:443?obfs=salamander&obfs-password=op&sni=hy.example.com&mport=20000-30000&hopinterval=60&upmbps=50&downmbps=200#HY",
         "hy2 gecko" to "hysteria2://pw@gk.example.com:8443?obfs=gecko&obfs-password=op&minpacketsize=600&maxpacketsize=1200&insecure=1&alpn=h3#GK",
         "tuic" to "tuic://$uuid:pw@tu.example.com:443?congestion_control=bbr&udp_relay_mode=quic&reduce_rtt=1&sni=tu.example.com&alpn=h3#TU",
+        "wireguard" to "wireguard://${enc(wgPrivate)}@wg.example.com:51820?publickey=${enc(wgPublic)}&presharedkey=${enc(wgPsk)}" +
+            "&address=10.0.0.2/32,fd00::2/128&mtu=1380#WG",
+        "amneziawg" to "awg://198.51.100.7:51820?pk=${enc(wgPrivate)}&publickey=${enc(wgPublic)}&address=10.8.0.2/32&jc=4&jmin=40&jmax=70" +
+            "&s1=15&s2=20&s3=5&s4=6&h1=100000-200000&h2=300000&h3=400000&h4=500000-600000&i1=${enc("<b 0xaabb><r 16>")}#AWG",
+        "hysteria v1" to "hysteria://h1.example.com:443?auth=secret&peer=h1.example.com&insecure=1&upmbps=20&downmbps=100&obfsParam=xp&mport=20000-30000#H1",
+        "juicity pinned" to "juicity://$uuid:pw@j.example.com:443?congestion_control=bbr&sni=j.example.com&pinned_certchain_sha256=${enc(pin)}#J",
+        "juicity insecure" to "juicity://$uuid:pw@ji.example.com:443?sni=ji.example.com&allow_insecure=1#JI",
+        "anytls" to """{"type":"anytls","tag":"A","server":"a.example.com","server_port":443,"password":"pw","idle_session_timeout":"30s",
+            "tls":{"enabled":true,"server_name":"a.example.com","utls":{"enabled":true,"fingerprint":"chrome"}}}""",
+        "socks" to """{"type":"socks","tag":"S5","server":"s5.example.com","server_port":1080,"version":"5","username":"u","password":"p"}""",
+        "http tls" to """{"type":"http","tag":"HP","server":"hp.example.com","server_port":443,"username":"u","password":"p",
+            "tls":{"enabled":true,"server_name":"hp.example.com"}}""",
     )
 
     private fun node(text: String): Node {
@@ -128,11 +145,22 @@ class ConfigFormTest {
     }
 
     @Test
+    fun `every form protocol has a round-trip case`() {
+        val covered = links.values.mapNotNull { ConfigForm.from(ConfigParser.read(it, SubId(0)))?.protocol }.toSet()
+        assertEquals(FormProtocol.entries.toSet(), covered)
+    }
+
+    @Test
     fun `blank forms ask for what each protocol needs`() {
         for (p in FormProtocol.entries) {
             val errors = ConfigForm.blank(p).validate().errors
             assertEquals(UiText.Res(R.string.subs_form_error_required), errors[Field.SERVER], "$p")
-            assertTrue(Field.UUID in errors || Field.PASSWORD in errors, "$p: $errors")
+            when (p) {
+                FormProtocol.SOCKS, FormProtocol.HTTP, FormProtocol.HYSTERIA -> assertEquals(setOf(Field.SERVER), errors.keys, "$p")
+                FormProtocol.WIREGUARD, FormProtocol.AMNEZIAWG ->
+                    assertEquals(setOf(Field.SERVER, Field.PRIVATE_KEY, Field.ADDRESS, Field.PUBLIC_KEY), errors.keys, "$p")
+                else -> assertTrue(Field.UUID in errors || Field.PASSWORD in errors, "$p: $errors")
+            }
         }
     }
 
@@ -146,6 +174,15 @@ class ConfigFormTest {
             FormProtocol.SHADOWSOCKS to ConfigForm.blank(FormProtocol.SHADOWSOCKS).set(Field.SERVER, "s.example.com").set(Field.PASSWORD, ss16),
             FormProtocol.HYSTERIA2 to ConfigForm.blank(FormProtocol.HYSTERIA2).set(Field.SERVER, "h.example.com").set(Field.PASSWORD, "pw"),
             FormProtocol.TUIC to ConfigForm.blank(FormProtocol.TUIC).set(Field.SERVER, "u.example.com").set(Field.UUID, uuid).set(Field.PASSWORD, "pw"),
+            FormProtocol.AMNEZIAWG to ConfigForm.blank(FormProtocol.AMNEZIAWG).set(Field.SERVER, "198.51.100.8")
+                .set(Field.PRIVATE_KEY, wgPrivate).set(Field.PUBLIC_KEY, wgPublic).set(Field.ADDRESS, "10.8.0.2").set(Field.H1, "100-200"),
+            FormProtocol.WIREGUARD to ConfigForm.blank(FormProtocol.WIREGUARD).set(Field.SERVER, "wg.example.com")
+                .set(Field.PRIVATE_KEY, wgPrivate).set(Field.PUBLIC_KEY, wgPublic).set(Field.ADDRESS, "10.0.0.2/32, fd00::2"),
+            FormProtocol.HYSTERIA to ConfigForm.blank(FormProtocol.HYSTERIA).set(Field.SERVER, "h1.example.com"),
+            FormProtocol.JUICITY to ConfigForm.blank(FormProtocol.JUICITY).set(Field.SERVER, "j.example.com").set(Field.UUID, uuid).set(Field.PASSWORD, "pw"),
+            FormProtocol.ANYTLS to ConfigForm.blank(FormProtocol.ANYTLS).set(Field.SERVER, "a.example.com").set(Field.PASSWORD, "pw"),
+            FormProtocol.SOCKS to ConfigForm.blank(FormProtocol.SOCKS).set(Field.SERVER, "s.example.com"),
+            FormProtocol.HTTP to ConfigForm.blank(FormProtocol.HTTP).set(Field.SERVER, "p.example.com").set(Field.USERNAME, "u").set(Field.PASSWORD, "p"),
         )
         assertEquals(FormProtocol.entries.toSet(), filled.keys)
         for ((p, form) in filled) {
@@ -153,6 +190,7 @@ class ConfigFormTest {
             val n = node(form.name("Мой").toText())
             assertEquals(Capability.SUPPORTED, n.capability, "$p")
             assertEquals("Мой", n.displayName)
+            assertEquals(p, ConfigForm.from(ConfigParser.read(form.toText(), SubId(0)))?.protocol, "$p reopens in its own form")
             val draft = ConfigDraft.new().copy(mode = ConfigMode.FORM, form = form)
             assertNull(draft.validate().error, "$p")
         }
@@ -241,11 +279,123 @@ class ConfigFormTest {
     fun `configs the form cannot show stay in text mode`() {
         val read = { t: String -> ConfigParser.read(t, SubId(0)) }
         assertNull(ConfigForm.from(read("vless://$uuid@k.example.com:443?type=kcp&seed=x#K")), "mkcp has no form")
-        assertNull(ConfigForm.from(read("hysteria://h.example.com:9080?auth=a&peer=h.example.com#H")), "hysteria v1 has no form")
         assertNull(ConfigForm.from(read("hysteria://h.example.com:9080?auth=a&protocol=faketcp")), "unsupported nodes keep their text")
-        val anytls = """{"type":"anytls","server":"a.example.com","server_port":443,"password":"p","tls":{"enabled":true}}"""
-        assertNull(ConfigForm.from(read(anytls)))
+        val byteAuth = """{"type":"hysteria","server":"h.example.com","server_port":443,"auth":"c2VjcmV0","up_mbps":10,"down_mbps":50,"tls":{"enabled":true}}"""
+        assertNull(ConfigForm.from(read(byteAuth)), "base64 auth has no field")
+        val twoPeers = """{"type":"wireguard","address":["10.0.0.2/32"],"private_key":"$wgPrivate","peers":[
+            {"address":"a.example.com","port":51820,"public_key":"$wgPublic","allowed_ips":["0.0.0.0/0"]},
+            {"address":"b.example.com","port":51820,"public_key":"$wgPsk","allowed_ips":["10.1.0.0/16"]}]}"""
+        assertNull(ConfigForm.from(read(twoPeers)), "the form edits one peer")
         assertNull(ConfigForm.from(read("trojan://a@a.example.com:443\ntrojan://b@b.example.com:443")))
+    }
+
+    @Test
+    fun `amneziawg fields are checked against what the device accepts`() {
+        fun err(form: ConfigForm, field: Field) = form.validate().errors[field]
+        val awg = ConfigForm.blank(FormProtocol.AMNEZIAWG).set(Field.SERVER, "198.51.100.8")
+            .set(Field.PRIVATE_KEY, wgPrivate).set(Field.PUBLIC_KEY, wgPublic).set(Field.ADDRESS, "10.8.0.2/32")
+        assertEquals(emptyMap(), awg.validate().errors)
+        assertEquals(UiText.Res(R.string.subs_form_error_junk_range), err(awg.set(Field.JMIN, "80"), Field.JMAX))
+        assertNull(err(awg.set(Field.JMIN, "80").set(Field.JC, "0"), Field.JMAX), "no junk packets, no junk sizes")
+        assertEquals(UiText.Res(R.string.subs_form_error_int_range, listOf(0, 65535)), err(awg.set(Field.S1, "70000"), Field.S1))
+        assertEquals(UiText.Res(R.string.subs_form_error_awg_range), err(awg.set(Field.H1, "9-1"), Field.H1))
+        assertEquals(UiText.Res(R.string.subs_form_error_awg_overlap, listOf(1)), err(awg.set(Field.H1, "5-10").set(Field.H2, "8"), Field.H2))
+        assertEquals(UiText.Res(R.string.subs_form_error_awg_overlap_default, listOf(2)), err(awg.set(Field.H1, "2"), Field.H1))
+        assertEquals(UiText.Res(R.string.subs_form_error_awg_chain), err(awg.set(Field.I1, "<b 0xabc>"), Field.I1))
+        assertNull(err(awg.set(Field.I1, "<b 0xaabb><r 16><t>"), Field.I1))
+        val cleared = ConfigForm.AWG_FIELDS.fold(awg) { f, field -> f.set(field, "") }
+        assertNull(cleared.toOutbound()["amnezia"], "an empty AmneziaWG block saves as plain WireGuard")
+    }
+
+    @Test
+    fun `wireguard edits keep what the form does not show`() {
+        val json = """{"type":"wireguard","tag":"W","mtu":1400,"address":["10.8.0.2/32"],"private_key":"$wgPrivate",
+            "peers":[{"address":"198.51.100.9","port":51820,"public_key":"$wgPublic","allowed_ips":["0.0.0.0/0"],"persistent_keepalive_interval":25}],
+            "amnezia":{"jc":4,"jmin":40,"jmax":70,"s1":20,"s2":20,"s3":20,"s4":20,"header_protection_key":"$wgPsk","random_trailers":true}}"""
+        val form = formOf(json)
+        assertEquals(FormProtocol.AMNEZIAWG, form.protocol)
+        val o = form.set(Field.S1, "30").set(Field.SERVER, "198.51.100.10").toOutbound()
+        val amnezia = o["amnezia"]!!.jsonObject
+        assertEquals("30", amnezia.s("s1"))
+        assertEquals(wgPsk, amnezia.s("header_protection_key"))
+        assertEquals("true", amnezia.s("random_trailers"))
+        val peer = (o["peers"] as kotlinx.serialization.json.JsonArray).single().jsonObject
+        assertEquals("198.51.100.10", peer.s("address"))
+        assertEquals("25", peer.s("persistent_keepalive_interval"))
+        assertNull(o["server"])
+    }
+
+    @Test
+    fun `wireguard addresses take bare IPs and get prefixes`() {
+        assertEquals(listOf("10.0.0.2/32", "fd00::2/64"), Cidr.list("10.0.0.2, fd00::2/64"))
+        assertEquals(listOf("0.0.0.0/0", "::/0"), Cidr.list(ConfigForm.ALL_TRAFFIC))
+        assertEquals(listOf("1:2:3:4:5:6:7:8/128", "::ffff:10.0.0.1/128"), Cidr.list("1:2:3:4:5:6:7:8 ::ffff:10.0.0.1"))
+        assertEquals(emptyList(), Cidr.list(" "))
+        assertNull(Cidr.list("10.0.0.300"))
+        assertNull(Cidr.list("10.0.0.0/33"))
+        assertNull(Cidr.list("1:2:3"))
+        assertNull(Cidr.list("1::2::3"))
+        assertNull(Cidr.list("example.com"))
+        assertEquals(listOf("::/128", "::1.2.3.4/128", "1:2:3:4:5:6:1.2.3.4/128"), Cidr.list("::, ::1.2.3.4, 1:2:3:4:5:6:1.2.3.4"))
+        for (bad in listOf("fd00::2:", "fd00:::2", ":fd00::2", "1.2.3.4::", "1.2.3.4::1", ":::", "fe80::1%eth0", "12345::1", "1:2:3:4:5:6:7:8:9", "1::2:3:4:5:6:7:8")) {
+            assertNull(Cidr.list(bad), bad)
+        }
+    }
+
+    @Test
+    fun `wireguard address lists made of separators only are required`() {
+        val wg = ConfigForm.blank(FormProtocol.WIREGUARD)
+        assertEquals(UiText.Res(R.string.subs_form_error_required), wg.set(Field.ALLOWED_IPS, ", ").validate().errors[Field.ALLOWED_IPS])
+        assertEquals(UiText.Res(R.string.subs_form_error_required), wg.set(Field.ADDRESS, ",").validate().errors[Field.ADDRESS])
+    }
+
+    @Test
+    fun `typed header ranges save in the form the core decodes`() {
+        val awg = ConfigForm.blank(FormProtocol.AMNEZIAWG).set(Field.SERVER, "198.51.100.8")
+            .set(Field.PRIVATE_KEY, wgPrivate).set(Field.PUBLIC_KEY, wgPublic).set(Field.ADDRESS, "10.8.0.2/32")
+            .set(Field.H1, "100\t- 200").set(Field.H2, " 300 ")
+        assertEquals(emptyMap(), awg.validate().errors)
+        val amnezia = awg.toOutbound()["amnezia"]!!.jsonObject
+        assertEquals("100-200", amnezia.s("h1"))
+        assertEquals("300", amnezia.s("h2"))
+        assertEquals(Capability.SUPPORTED, node(awg.toText()).capability)
+    }
+
+    @Test
+    fun `settings the form cannot show keep the config in text mode`() {
+        val read = { t: String -> ConfigParser.read(t, SubId(0)) }
+        val objectRange = """{"type":"wireguard","address":["10.8.0.2/32"],"private_key":"$wgPrivate",
+            "peers":[{"address":"198.51.100.9","port":51820,"public_key":"$wgPublic","allowed_ips":["0.0.0.0/0"]}],
+            "amnezia":{"jc":4,"jmin":40,"jmax":70,"h1":{"from":100,"to":200}}}"""
+        assertEquals(Capability.SUPPORTED, node(objectRange).capability)
+        assertNull(ConfigForm.from(read(objectRange)), "a {from,to} range has no field")
+        val socks4 = """{"type":"socks","server":"s.example.com","server_port":1080,"version":"4a","username":"u"}"""
+        assertNull(ConfigForm.from(read(socks4)), "the form is SOCKS5")
+    }
+
+    @Test
+    fun `other protocols ask for what their core needs`() {
+        fun err(form: ConfigForm, field: Field) = form.validate().errors[field]
+        val hy1 = ConfigForm.blank(FormProtocol.HYSTERIA).set(Field.SERVER, "h.example.com")
+        assertEquals(UiText.Res(R.string.subs_form_error_required), err(hy1.set(Field.UP_MBPS, ""), Field.UP_MBPS))
+        assertNull(err(hy1, Field.OBFS_PASSWORD), "xplus is optional")
+
+        val juicity = formOf(links.getValue("juicity pinned"))
+        assertTrue(Field.INSECURE !in juicity.fields(), "a pin replaces CA checks")
+        assertTrue(Field.INSECURE in juicity.set(Field.PIN_SHA256, "").fields())
+        assertNull(juicity.switch(Field.INSECURE, true).toOutbound()["tls"]!!.jsonObject["insecure"])
+        assertEquals(UiText.Res(R.string.subs_form_error_pin), err(juicity.set(Field.PIN_SHA256, "abc"), Field.PIN_SHA256))
+        assertNull(err(juicity.set(Field.PIN_SHA256, "ab".repeat(32)), Field.PIN_SHA256))
+        assertEquals(UiText.Res(R.string.subs_form_error_uuid), err(juicity.set(Field.UUID, "my-user"), Field.UUID))
+
+        val socks = ConfigForm.blank(FormProtocol.SOCKS).set(Field.SERVER, "s.example.com")
+        assertEquals(UiText.Res(R.string.subs_form_error_required), err(socks.set(Field.PASSWORD, "p"), Field.USERNAME))
+        assertEquals(listOf(ConfigForm.NONE, ConfigForm.TLS), ConfigForm.blank(FormProtocol.HTTP).options(Field.SECURITY))
+
+        val wg = ConfigForm.blank(FormProtocol.WIREGUARD)
+        assertEquals(UiText.Res(R.string.subs_form_error_wg_key), err(wg.set(Field.PUBLIC_KEY, "c2hvcnQ="), Field.PUBLIC_KEY))
+        assertEquals(UiText.Res(R.string.subs_form_error_cidr), err(wg.set(Field.ADDRESS, "10.0.0"), Field.ADDRESS))
+        assertEquals(UiText.Res(R.string.subs_form_error_int_range, listOf(576, 65535)), err(wg.set(Field.MTU, "100"), Field.MTU))
     }
 
     @Test

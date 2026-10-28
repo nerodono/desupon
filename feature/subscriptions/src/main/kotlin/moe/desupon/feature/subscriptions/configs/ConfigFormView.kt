@@ -1,6 +1,7 @@
 package moe.desupon.feature.subscriptions.configs
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -48,6 +49,13 @@ internal fun FormProtocol.label(): String = when (this) {
     FormProtocol.SHADOWSOCKS -> "Shadowsocks"
     FormProtocol.HYSTERIA2 -> "Hysteria2"
     FormProtocol.TUIC -> "TUIC"
+    FormProtocol.AMNEZIAWG -> "AmneziaWG"
+    FormProtocol.WIREGUARD -> "WireGuard"
+    FormProtocol.HYSTERIA -> "Hysteria v1"
+    FormProtocol.JUICITY -> "Juicity"
+    FormProtocol.ANYTLS -> "AnyTLS"
+    FormProtocol.SOCKS -> "SOCKS5"
+    FormProtocol.HTTP -> "HTTP"
 }
 
 /** Choice of protocol for a config entered by hand; picking one starts a blank form. */
@@ -79,18 +87,43 @@ internal fun ConfigFormView(form: ConfigForm, enabled: Boolean, onChange: (Confi
             modifier = Modifier.fillMaxWidth(),
         )
         val warnings = form.warnings()
-        for (field in form.fields()) {
-            when (field.kind) {
-                FieldKind.TEXT, FieldKind.NUMBER -> TextInput(form, field, warnings[field], enabled, onChange)
-                FieldKind.SWITCH -> SwitchInput(form, field, enabled, onChange)
-                FieldKind.CHOICE -> ChoiceInput(form, field, enabled, onChange)
+        val fields = form.fields()
+        for (field in fields) {
+            if (field == Field.JC) {
+                SectionTitle(stringResource(R.string.subs_form_awg_section))
+                Hint(stringResource(R.string.subs_form_hint_awg))
+            }
+            val row = ROWS.firstOrNull { field in it && it.all(fields::contains) }
+            when {
+                row == null -> FieldInput(form, field, warnings[field], enabled, onChange)
+                field == row.first() -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { f ->
+                        Box(Modifier.weight(1f)) { FieldInput(form, f, warnings[f], enabled, onChange) }
+                    }
+                }
             }
         }
     }
 }
 
+@Composable
+private fun FieldInput(form: ConfigForm, field: Field, warning: UiText?, enabled: Boolean, onChange: (ConfigForm) -> Unit) {
+    when (field.kind) {
+        FieldKind.TEXT, FieldKind.NUMBER -> TextInput(form, field, warning, enabled, onChange)
+        FieldKind.SWITCH -> SwitchInput(form, field, enabled, onChange)
+        FieldKind.CHOICE -> ChoiceInput(form, field, enabled, onChange)
+    }
+}
+
+/** Short AmneziaWG numbers share a line, so the block stays scannable on a phone. */
+private val ROWS = listOf(
+    listOf(Field.JC, Field.JMIN, Field.JMAX),
+    listOf(Field.S1, Field.S2),
+    listOf(Field.S3, Field.S4),
+)
+
 /** Credentials: hidden by default and typed with a password keyboard, so the IME does not learn them. */
-private val SECRETS = setOf(Field.PASSWORD, Field.OBFS_PASSWORD, Field.UUID, Field.REALITY_KEY)
+private val SECRETS = setOf(Field.PASSWORD, Field.OBFS_PASSWORD, Field.UUID, Field.REALITY_KEY, Field.PRIVATE_KEY, Field.PRESHARED_KEY)
 
 @Composable
 private fun TextInput(form: ConfigForm, field: Field, warning: UiText?, enabled: Boolean, onChange: (ConfigForm) -> Unit) {
@@ -259,18 +292,51 @@ private fun Field.label(): String = stringResource(
         Field.CONGESTION -> R.string.subs_form_congestion
         Field.UDP_RELAY -> R.string.subs_form_udp_relay
         Field.ZERO_RTT -> R.string.subs_form_zero_rtt
+        Field.USERNAME -> R.string.subs_form_username
+        Field.PIN_SHA256 -> R.string.subs_form_pin
+        Field.PRIVATE_KEY -> R.string.subs_form_private_key
+        Field.ADDRESS -> R.string.subs_form_address
+        Field.PUBLIC_KEY -> R.string.subs_form_public_key
+        Field.PRESHARED_KEY -> R.string.subs_form_preshared_key
+        Field.ALLOWED_IPS -> R.string.subs_form_allowed_ips
+        Field.MTU -> R.string.subs_form_mtu
+        Field.JC -> R.string.subs_form_jc
+        Field.JMIN -> R.string.subs_form_jmin
+        Field.JMAX -> R.string.subs_form_jmax
+        Field.S1 -> R.string.subs_form_s1
+        Field.S2 -> R.string.subs_form_s2
+        Field.S3 -> R.string.subs_form_s3
+        Field.S4 -> R.string.subs_form_s4
+        Field.H1 -> R.string.subs_form_h1
+        Field.H2 -> R.string.subs_form_h2
+        Field.H3 -> R.string.subs_form_h3
+        Field.H4 -> R.string.subs_form_h4
+        Field.I1 -> R.string.subs_form_i1
+        Field.I2 -> R.string.subs_form_i2
+        Field.I3 -> R.string.subs_form_i3
+        Field.I4 -> R.string.subs_form_i4
+        Field.I5 -> R.string.subs_form_i5
     },
 )
 
 @Composable
 private fun Field.hint(form: ConfigForm): String? = when (this) {
     Field.SNI -> stringResource(R.string.subs_form_hint_sni)
-    Field.ALPN -> stringResource(R.string.subs_form_hint_alpn)
+    Field.ALPN -> stringResource(if (form.protocol in QUIC) R.string.subs_form_hint_alpn_quic else R.string.subs_form_hint_alpn)
     Field.HOP_PORTS -> stringResource(R.string.subs_form_hint_hop_ports)
     Field.HOP_INTERVAL -> stringResource(R.string.subs_form_hint_hop_interval)
     Field.REALITY_SID -> stringResource(R.string.subs_form_hint_short_id)
     Field.PATH -> stringResource(R.string.subs_form_hint_path)
-    Field.UP_MBPS, Field.DOWN_MBPS -> stringResource(R.string.subs_form_hint_mbps)
+    Field.UP_MBPS, Field.DOWN_MBPS -> stringResource(
+        if (form.protocol == FormProtocol.HYSTERIA) R.string.subs_form_hint_mbps_required else R.string.subs_form_hint_mbps,
+    )
+    Field.USERNAME -> stringResource(R.string.subs_form_hint_username)
+    Field.PIN_SHA256 -> stringResource(R.string.subs_form_hint_pin)
+    Field.ADDRESS -> stringResource(R.string.subs_form_hint_address)
+    Field.ALLOWED_IPS -> stringResource(R.string.subs_form_hint_allowed_ips)
+    Field.PRESHARED_KEY, Field.MTU -> stringResource(R.string.subs_form_hint_optional)
+    Field.OBFS_PASSWORD -> if (form.protocol == FormProtocol.HYSTERIA) stringResource(R.string.subs_form_hint_xplus) else null
+    Field.I1 -> stringResource(R.string.subs_form_hint_awg_i)
     Field.PASSWORD -> if (form.protocol == FormProtocol.SHADOWSOCKS && form[Field.METHOD].startsWith("2022-")) {
         stringResource(R.string.subs_form_hint_ss_password)
     } else {
@@ -280,3 +346,5 @@ private fun Field.hint(form: ConfigForm): String? = when (this) {
 }
 
 private const val CHIP_LIMIT = 6
+
+private val QUIC = setOf(FormProtocol.HYSTERIA2, FormProtocol.HYSTERIA, FormProtocol.TUIC, FormProtocol.JUICITY)
