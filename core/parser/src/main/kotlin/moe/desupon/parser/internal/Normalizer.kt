@@ -1,9 +1,12 @@
 package moe.desupon.parser.internal
 
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import moe.desupon.model.Secret
+import moe.desupon.model.node.AmneziaRules
 import moe.desupon.model.node.Capability
 import moe.desupon.model.node.Node
 import moe.desupon.model.node.NodeKey
@@ -75,6 +78,7 @@ internal object Normalizer {
     }
 
     private val CHROME = jsonObj { bool("enabled", true); str("fingerprint", "chrome") }
+    private val TLS_REQUIRED = setOf("hysteria", "hysteria2", "tuic", "juicity", "anytls")
 
     fun fix(input: JsonObject, issues: Issues): JsonObject {
         var o = input.without("tag")
@@ -117,6 +121,12 @@ internal object Normalizer {
             if (isQuic(type, o)) tls = tls.without("utls")
             o = o.with("tls", tls)
         }
+        if (type in TLS_REQUIRED && o.child("tls")?.bool("enabled") != true) issues.unsupported("$type without TLS")
+        if (type == "hysteria") {
+            // The core has no bandwidth detection for v1 and refuses to start without both rates.
+            if (o.str("up") == null && (o.int("up_mbps") ?: 0) <= 0) issues.unsupported("hysteria upload rate missing")
+            if (o.str("down") == null && (o.int("down_mbps") ?: 0) <= 0) issues.unsupported("hysteria download rate missing")
+        }
 
         if (type == "wireguard") {
             o = o.with("private_key", JsonPrimitive(Keys.std(o.str("private_key") ?: malformed("missing private key"), 32, "private key")))
@@ -127,6 +137,7 @@ internal object Normalizer {
                 p
             }
             if (peers.isNullOrEmpty()) malformed("wireguard without peers")
+            if (peers.any { it.strList("allowed_ips").isEmpty() }) issues.unsupported("peer allowed_ips missing")
             o = o.with("peers", JsonArray(peers))
             o.child("amnezia")?.let { a0 ->
                 val a = a0.str("header_protection_key")?.let { a0.with("header_protection_key", JsonPrimitive(Keys.std(it, 32, "AmneziaWG header protection key"))) } ?: a0
@@ -134,6 +145,7 @@ internal object Normalizer {
                 if (a.str("header_protection_key") != null && listOf("s1", "s2", "s3", "s4").any { (a.int(it) ?: 0) < 12 }) {
                     issues.unsupported("AmneziaWG header protection needs S1-S4 >= 12")
                 }
+                AmneziaRules.violation { a[it].amneziaText() }?.let(issues::unsupported)
             }
         }
         return o
@@ -264,4 +276,12 @@ internal object Normalizer {
         if (LTE.containsMatchIn(name)) add(NodeLabels.LTE)
         if (WHITELIST.containsMatchIn(name)) add(NodeLabels.WHITELIST)
     }
+}
+
+/** An `amnezia` value as text; the core also takes a range as `{"from":lo,"to":hi}`. */
+private fun JsonElement?.amneziaText(): String? = when (this) {
+    null, is JsonNull -> null
+    is JsonPrimitive -> content
+    is JsonObject -> "${this["from"].scalar()}-${this["to"].scalar()}"
+    else -> toString()
 }

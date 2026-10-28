@@ -4,7 +4,8 @@ import java.util.Base64
 
 /** Key-material shapes the core enforces at start; any base64 spelling is accepted and re-emitted canonically. */
 internal object Keys {
-    private val UUID = Regex("[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}")
+    // All dashes or none: the core's UUID decoder refuses anything in between.
+    private val UUID = Regex("[0-9a-fA-F]{8}(-?)[0-9a-fA-F]{4}\\1[0-9a-fA-F]{4}\\1[0-9a-fA-F]{4}\\1[0-9a-fA-F]{12}")
 
     /** Standard padded base64 of exactly [size] bytes. */
     fun std(raw: String, size: Int, what: String): String {

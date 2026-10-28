@@ -94,6 +94,49 @@ class NodeRulesTest {
         assertFalse(Fixtures.awgSmallPadding.id.tag in cfg.nodeTags)
     }
 
+    private var variants = 0
+
+    private fun variant(base: Node, from: String, to: String) = base.copy(
+        id = NodeId("%016x".format(++variants) + base.id.hash),
+        outboundJson = Secret(base.outboundJson.raw().replace(from, to).also { check(it.contains(to)) }),
+    )
+
+    private fun assertRejected(cases: Map<Node, String>) {
+        val cfg = gen.probeConfig(cases.keys.toList() + Fixtures.vmessWs)
+        for ((node, reason) in cases) assertTrue(cfg.rejected[node.id]?.contains(reason) == true, "$reason: ${cfg.rejected[node.id]}")
+        assertFalse(Fixtures.vmessWs.id in cfg.rejected)
+    }
+
+    @Test
+    fun `amnezia settings the device crashes on or refuses are rejected`() {
+        val awg = Fixtures.amneziawg
+        assertRejected(
+            mapOf(
+                variant(awg, "\"jmax\":159", "\"jmax\":50") to "Jmin above Jmax",
+                variant(awg, "\"jc\":3", "\"jc\":500") to "Jc above 128",
+                variant(awg, "\"s1\":38", "\"s1\":70000") to "size above 65535",
+                variant(awg, "\"h2\":\"200000000-200999999\"", "\"h2\":\"100500000-100600000\"") to "H1-H4 overlap",
+                variant(awg, "\"h2\":\"200000000-200999999\"", "\"h2\":{\"from\":100500000,\"to\":100600000}") to "H1-H4 overlap",
+                variant(awg, "\"h3\":\"300000000-300999999\"", "\"h3\":\"9-1\"") to "H3 is not a range",
+                variant(awg, "\"h3\":\"300000000-300999999\"", "\"h3\":\"300000000 - 300999999\"") to "H3 is not a range",
+                variant(awg, "\"i1\":\"<r 256>\"", "\"i1\":\"<b 0x1>\"") to "I1 is not a tag chain",
+                variant(awg, "\"i1\":\"<r 256>\"", "\"i1\":\"<r 1>\\n<r 2>\"") to "I1 is not a tag chain",
+            ),
+        )
+    }
+
+    @Test
+    fun `nodes whose outbound the core refuses to build are rejected one by one`() {
+        assertRejected(
+            mapOf(
+                variant(Fixtures.hysteria, "\"up_mbps\":50,", "") to "hysteria upload rate missing",
+                variant(Fixtures.anytls, "\"tls\":{\"enabled\":true,", "\"tls\":{\"enabled\":false,") to "anytls without TLS",
+                variant(Fixtures.wireguard, "\"allowed_ips\":[\"0.0.0.0/0\",\"::/0\"]", "\"allowed_ips\":[]") to "peer allowed_ips missing",
+                variant(Fixtures.tuic, Fixtures.UUID, "00000000-00004000-8000-00000000c0de") to "tuic uuid is not a UUID",
+            ),
+        )
+    }
+
     @Test
     fun `nodes with key shapes the core refuses are rejected one by one`() {
         val short = "c3ludGhldGljLXNob3J0LWtleS0wMDAwMDAwMDAwMQ=="

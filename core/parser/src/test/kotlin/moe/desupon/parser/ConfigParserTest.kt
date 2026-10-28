@@ -156,7 +156,7 @@ class ConfigParserTest {
     @Test
     fun `a gecko packet range the core refuses is unsupported`() {
         fun reason(obfs: String): String? {
-            val r = ConfigParser.read("""{"type":"hysteria2","server":"a.example.com","server_port":443,"password":"p","obfs":$obfs}""", sub)
+            val r = ConfigParser.read("""{"type":"hysteria2","server":"a.example.com","server_port":443,"password":"p","tls":{"enabled":true},"obfs":$obfs}""", sub)
             return r.unsupportedReasons[r.nodes.single().id]
         }
         assertEquals("gecko packet size range", reason("""{"type":"gecko","password":"o","min_packet_size":1300}"""))
@@ -166,6 +166,49 @@ class ConfigParserTest {
         assertNull(reason("""{"type":"gecko","password":"o"}"""))
         assertNull(reason("""{"type":"salamander","password":"o"}"""))
         assertTrue(Fx.reasonOf("hy2://p@a.example.com:443?obfs=gecko&obfs-password=o&minpacketsize=1300#g") == "gecko packet size range")
+    }
+
+    @Test
+    fun `amnezia settings the device refuses are unsupported`() {
+        val key = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+        val link = "awg://192.0.2.4:51820/?pk=$key&address=10.8.0.2/32&publickey=$key&jc=4"
+        assertNull(Fx.reasonOf("$link&jmin=40&jmax=70&h1=100-200#ok"))
+        assertEquals("AmneziaWG Jmin above Jmax", Fx.reasonOf("$link&jmin=80&jmax=70#junk"))
+        assertEquals("AmneziaWG H1-H4 overlap", Fx.reasonOf("$link&h1=100-200&h2=150#overlap"))
+        assertEquals("AmneziaWG I1 is not a tag chain", Fx.reasonOf("$link&i1=%3Cq%3E#chain"))
+
+        fun reason(amnezia: String): String? {
+            val r = ConfigParser.read(
+                """{"type":"wireguard","address":["10.8.0.2/32"],"private_key":"$key",
+                "peers":[{"address":"192.0.2.4","port":51820,"public_key":"$key","allowed_ips":["0.0.0.0/0"]}],"amnezia":$amnezia}""",
+                sub,
+            )
+            return r.unsupportedReasons[r.nodes.single().id]
+        }
+        assertNull(reason("""{"h1":{"from":100,"to":200},"h2":300}"""))
+        assertEquals("AmneziaWG H1-H4 overlap", reason("""{"h1":{"from":100,"to":200},"h2":"150"}"""))
+        assertEquals("AmneziaWG H1 is not a range", reason("""{"h1":"100 - 200"}"""))
+        assertEquals("AmneziaWG I1 is not a tag chain", reason("""{"i1":"<r 1>\n<r 2>"}"""))
+    }
+
+    @Test
+    fun `outbounds the core refuses to build are unsupported`() {
+        fun reason(json: String): String? = ConfigParser.read(json, sub).let { r -> r.unsupportedReasons[r.nodes.single().id] }
+        assertEquals(
+            "hysteria upload rate missing",
+            reason("""{"type":"hysteria","server":"h.example.com","server_port":443,"down_mbps":50,"tls":{"enabled":true}}"""),
+        )
+        assertEquals("anytls without TLS", reason("""{"type":"anytls","server":"a.example.com","server_port":443,"password":"p"}"""))
+        val key = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+        assertEquals(
+            "peer allowed_ips missing",
+            reason("""{"type":"wireguard","address":["10.0.0.2/32"],"private_key":"$key","peers":[{"address":"192.0.2.4","port":51820,"public_key":"$key"}]}"""),
+        )
+        val partialDashes = ConfigParser.read(
+            """{"type":"tuic","server":"t.example.com","server_port":443,"uuid":"00000000-00004000-8000-00000000c0de","password":"p","tls":{"enabled":true}}""",
+            sub,
+        )
+        assertEquals("tuic uuid is not a UUID", (partialDashes.error as ConfigError.Malformed).detail)
     }
 
     @Test

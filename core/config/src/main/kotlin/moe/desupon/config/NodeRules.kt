@@ -2,17 +2,19 @@ package moe.desupon.config
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import moe.desupon.model.node.AmneziaRules
 import moe.desupon.model.node.Capability
 import moe.desupon.model.node.Node
 import moe.desupon.model.node.NodeId
 import moe.desupon.model.node.Protocol
 
-/** Per-node rules of the extended core; every rule here was confirmed against a live core. */
+/** Per-node rules of the extended core, each confirmed against a live core or, for AmneziaWG values, its bundled WireGuard device. */
 internal object NodeRules {
     const val DEFAULT_X_PADDING = "100-1000"
     const val VISION = "xtls-rprx-vision"
@@ -23,6 +25,7 @@ internal object NodeRules {
     const val MAX_HOPS = 3
 
     private val QUIC_TYPES = setOf("hysteria", "hysteria2", "tuic", "juicity")
+    private val TLS_REQUIRED = QUIC_TYPES + "anytls"
     private val NON_NODE_TYPES = setOf("direct", "block", "dns", "selector", "urltest", "fallback", "failover", "freeturn")
     private val DROPPED_KEYS = listOf("tag", "detour", "domain_strategy", "domain_resolver")
     private val DROPPED_ENDPOINT_KEYS = listOf("listen_port", "system", "name", "reserved")
@@ -34,7 +37,8 @@ internal object NodeRules {
     private val STD_KEY16 = Regex("[A-Za-z0-9+/]{22}==")
     private val RAW_URL_KEY32 = Regex("[A-Za-z0-9_-]{43}")
     private val SHA256_PIN = listOf(Regex("[A-Za-z0-9+/]{43}=?"), Regex("[A-Za-z0-9_-]{43}=?"), Regex("[0-9a-fA-F]{64}"))
-    private val UUID = Regex("[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}")
+    // All dashes or none: the core's UUID decoder refuses anything in between.
+    private val UUID = Regex("[0-9a-fA-F]{8}(-?)[0-9a-fA-F]{4}\\1[0-9a-fA-F]{4}\\1[0-9a-fA-F]{4}\\1[0-9a-fA-F]{12}")
 
     /** One finished outbound or endpoint. */
     data class Built(val json: JsonObject, val endpoint: Boolean)
@@ -190,6 +194,11 @@ internal object NodeRules {
             if (!flow.isNullOrEmpty() && flow != VISION) out += "unsupported flow"
         }
         if ((type == "tuic" || type == "juicity") && obj.string("uuid")?.let(UUID::matches) != true) out += "$type uuid is not a UUID"
+        if (type in TLS_REQUIRED && obj.obj("tls")?.bool("enabled") != true) out += "$type without TLS"
+        if (type == "hysteria") {
+            if (obj.string("up").isNullOrBlank() && (obj.int("up_mbps") ?: 0) <= 0) out += "hysteria upload rate missing"
+            if (obj.string("down").isNullOrBlank() && (obj.int("down_mbps") ?: 0) <= 0) out += "hysteria download rate missing"
+        }
         if (type == "hysteria2") obj.obj("obfs")?.takeIf { it.string("type") == "gecko" }?.let { geckoViolation(it)?.let(out::add) }
         if (type == "shadowsocks") ss2022Violation(obj)?.let { out += it }
         if (type == "juicity" && obj.string("pinned_certchain_sha256")?.let { pin -> SHA256_PIN.none { it.matches(pin) } } == true) {
@@ -213,6 +222,7 @@ internal object NodeRules {
             if (peers.any { it.string("public_key")?.let(STD_KEY32::matches) != true }) out += "peer public_key is not a 32-byte base64 key"
             if (peers.any { p -> p.string("pre_shared_key")?.let { !STD_KEY32.matches(it) } == true }) out += "peer pre_shared_key is not a 32-byte base64 key"
             if (peers.any { it.containsKey("persistent_keepalive_interval") }) out += "peer persistent keepalive set"
+            if (peers.isEmpty() || peers.any { allowedIps(it).isEmpty() }) out += "peer allowed_ips missing"
             obj.obj("amnezia")?.let { awg ->
                 if (!awg.string("header_protection_key").isNullOrBlank() &&
                     AWG_PADDINGS.any { (awg.int(it) ?: 0) < AWG_MIN_PADDING_WITH_HPK }
@@ -220,6 +230,7 @@ internal object NodeRules {
                     out += "AWG S1-S4 must be at least $AWG_MIN_PADDING_WITH_HPK with header_protection_key"
                 }
                 if (awg.string("header_protection_key")?.let { !STD_KEY32.matches(it) } == true) out += "AWG header_protection_key is not a 32-byte base64 key"
+                AmneziaRules.violation { awg[it].amneziaText() }?.let(out::add)
             }
         }
         val viaHop = obj.string("detour") != null && !endpoint
@@ -272,6 +283,12 @@ internal object NodeRules {
 
     private fun firstAlpn(tls: JsonObject?): String? = alpnList(tls).firstOrNull()
 
+    private fun allowedIps(peer: JsonObject): List<String> = when (val v = peer["allowed_ips"]) {
+        is JsonArray -> v.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) }
+        is JsonPrimitive -> listOfNotNull(v.contentOrNull?.takeIf(String::isNotBlank))
+        else -> emptyList()
+    }
+
     private fun alpnList(tls: JsonObject?): List<String> = when (val alpn = tls?.get("alpn")) {
         is JsonArray -> alpn.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
         is JsonPrimitive -> listOfNotNull(alpn.contentOrNull)
@@ -310,3 +327,11 @@ internal fun Map<String, JsonElement>.bool(key: String): Boolean? = (this[key] a
 internal fun Map<String, JsonElement>.int(key: String): Int? = (this[key] as? JsonPrimitive)?.intOrNull
 
 internal fun Map<String, JsonElement>.array(key: String): List<JsonElement> = (this[key] as? JsonArray).orEmpty()
+
+/** An `amnezia` value as text; the core also takes a range as `{"from":lo,"to":hi}`. */
+private fun JsonElement?.amneziaText(): String? = when (this) {
+    null, is JsonNull -> null
+    is JsonPrimitive -> content
+    is JsonObject -> "${(this["from"] as? JsonPrimitive)?.content}-${(this["to"] as? JsonPrimitive)?.content}"
+    else -> toString()
+}
